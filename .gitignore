@@ -1,0 +1,8 @@
+.DS_Store
+.breakpoints
+.replit
+.upm/
+.config/
+venv/
+**/__pycache__/**
+.idea/
