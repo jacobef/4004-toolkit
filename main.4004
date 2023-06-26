@@ -1,9 +1,84 @@
-JUN SRT
-ADD, ADD 0R
-XCH 0R
-CLB 
+/ CALLING CONVENTION: Functions return to 1P and accept arguments from 4P
+
+FIM 4P 36 /"$ " for monitor
+JMS WCR
+FIM 4P 32
+JMS WCR
+
+
+/ Keyboard polling loop
+/ Set expecting_char to 0 (false)
+LDM 0
+XCH 4R
+PKB, JMS RKB
+    / Set the accumulator to 0 if the key is the character separator
+    LDM 1000B
+    XCH 0R
+    LD 2R
+    SUB 0R
+    JCN 0100B SEP / Jump to the separator-handling code if the accumulator is 0
+    CHR, LD 4R
+        JCN 0100B PKB / If expecting_char is 0 (false), ignore the char
+        / Otherwise, write the char to the monitor
+        LD 2R
+        XCH 8R
+        LD 3R
+        XCH 9R
+        JMS WCR
+        / Set expecting_char to 0 (false)
+        LDM 0
+        XCH 4R
+        JUN PKB
+    SEP, LDM 1 / Set expecting_char to 1 (true)
+        XCH 4R
+        JUN PKB
+
+
+/ Read from keyboard - RKB()
+RKB, FIM 0P 0
+    SRC 0P
+    RDR
+    XCH 2R
+
+    FIM 0P 1
+    SRC 0P
+    RDR
+    XCH 3R
+
+    BBL 0
+
+/ Write Char to monitor - WCR(char: 8)
+WCR, LDM 2 / Write the char separator
+    XCH 1R
+    SRC 0P
+    LDM 8
+    WRR
+
+    JMS WT / Wait for the monitor to receive it
+
+    LDM 3 / Write the actual character
+    XCH 1R
+    SRC 0P
+    LD 9R
+    WRR
+    LDM 2
+    XCH 1R
+    SRC 0P
+    LD 8R
+    WRR
+
+    JMS WT / Wait for the monitor to receive it
+
+    BBL 0
+
+/ Wait - WT()
+WT, NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
+NOP
 BBL 0
-SRT, LDM 5
-XCH 0R
-LDM 5
-JMS ADD

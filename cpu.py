@@ -14,7 +14,7 @@ IO = InputOrOutput
 
 
 @dataclass
-class Line:
+class IOLine:
     io: InputOrOutput
     status: bool
 
@@ -22,7 +22,7 @@ class Line:
 class ROMPort:
     def __init__(self, line_io: list[InputOrOutput]):
         assert (len(line_io) == 4)
-        self.lines = [Line(io, False) for io in line_io]
+        self.lines: list[IOLine] = [IOLine(io, False) for io in line_io]
 
     def __str__(self):
         out = ""
@@ -78,7 +78,6 @@ class Memory:
             self.program_ram.append([False] * 8)
 
         self.rom: list[bool] = [False for _ in range(0, 32768)]
-
         self.rom_ports: list[ROMPort] = []
         for i in range(16):
             self.rom_ports.append(ROMPort(rom_port_spec[i]))

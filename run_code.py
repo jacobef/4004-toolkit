@@ -1,4 +1,7 @@
+from time import sleep, time
+
 from disassemble import disas_instr
+from log import debug_log
 from parse_instruction import *
 from cpu import *
 from colorama import Fore, Style
@@ -9,11 +12,16 @@ def load_machine_code(cpu: Intel4004, code: bytearray):
     cpu.memory.rom[:len(code_str)] = string_to_binary(code_str)
 
 
-def single_step(cpu: Intel4004):
+def single_step(cpu: Intel4004, quiet: bool = False):
+    start_time = time()
+    while time() < start_time + 0.001:
+        pass
+
     instruction = get_instr(cpu.prgm_cntr, cpu.memory.rom)
     args = get_args(instruction, cpu.prgm_cntr, cpu.memory.rom)
-    print(
-        f"Executing {Fore.RED}{disas_instr(instruction, args)}{Style.RESET_ALL} at {Fore.BLUE}{binary_to_int(cpu.prgm_cntr)}{Style.RESET_ALL}")
+    if not quiet:
+        print(
+            f"Executing {Fore.RED}{disas_instr(instruction, args)}{Style.RESET_ALL} at {Fore.BLUE}{binary_to_int(cpu.prgm_cntr)}{Style.RESET_ALL}")
     cpu.prgm_cntr = addr_of_next_instr(cpu.prgm_cntr, instruction)
 
     if instruction == NOP:
@@ -123,7 +131,7 @@ def single_step(cpu: Intel4004):
     elif instruction == DCL:
         cpu.memory.selected_bank = binary_to_int(cpu.accumulator[1:])
     elif instruction == SRC:
-        cpu.memory.selected_addr = cpu.get_register_pair(args[0])
+        cpu.memory.selected_addr = cpu.get_register_pair(args[0]).copy()
     elif instruction == RDM:
         cpu.accumulator = cpu.memory.get_data_ram_char().copy()
     elif instruction == RD0:
@@ -144,7 +152,11 @@ def single_step(cpu: Intel4004):
         cpu.memory.get_status_ram_chars()[3] = cpu.accumulator
     elif instruction == RDR:
         port = cpu.memory.get_romio_port()
+        port_n = binary_to_int(cpu.memory.selected_addr[4:])
         cpu.accumulator = [line.status for line in port.lines]
+        if port_n == 0 and cpu.index_regs[4] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
+            debug_log(f"[CPU] Received character separator")
+
     elif instruction == ADM:
         data_char = cpu.memory.get_data_ram_char().copy()
         added = add_binary(cpu.accumulator, data_char)
@@ -153,7 +165,9 @@ def single_step(cpu: Intel4004):
     elif instruction == WRM:
         cpu.memory.set_data_ram_char(cpu.accumulator)
     elif instruction == WRR:
+        debug_log(f"[CPU] Writing {binary_to_int(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[4:])}")
         cpu.memory.set_romio_port(cpu.accumulator)
+        debug_log(f"[CPU] Finished writing to port")
     elif instruction == WMP:
         cpu.memory.set_ramo_port(cpu.accumulator)
     elif instruction == SBM:
@@ -177,4 +191,10 @@ def single_step(cpu: Intel4004):
     # Convenience Instructions: (do not exist, delete when done)
     elif instruction == STOP:
         exit(0)
-    print("Done")
+    if not quiet:
+        print("Done")
+
+
+def turn_on(cpu: Intel4004):
+    while True:
+        single_step(cpu, quiet=True)

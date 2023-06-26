@@ -69,7 +69,7 @@ def parse_opcode(opcode: str) -> list[str]:
 
         if c in ascii_lowercase:
             placeholder = ""
-            while i < len(opcode) and opcode[i] in ascii_lowercase:
+            while i < len(opcode) and opcode[i] == c:
                 placeholder += opcode[i]
                 i += 1
             out.append(placeholder)
