@@ -3,6 +3,7 @@ from typing import Literal
 from dataclasses import dataclass
 
 from binary_utils import *
+from log import debug_log
 
 
 class InputOrOutput(Enum):
@@ -77,7 +78,7 @@ class Memory:
         for _ in range(4096):
             self.program_ram.append([False] * 8)
 
-        self.rom: list[bool] = [False for _ in range(0, 32768)]
+        self.rom: list[bool] = [False] * 32768
         self.rom_ports: list[ROMPort] = []
         for i in range(16):
             self.rom_ports.append(ROMPort(rom_port_spec[i]))
@@ -90,13 +91,18 @@ class Memory:
         chip_n = binary_to_int(self.selected_addr[0:2])
         register_n = binary_to_int(self.selected_addr[2:4])
         char_n = binary_to_int(self.selected_addr[4:8])
-        return self.ram_banks[self.selected_bank][chip_n][register_n].data_chars[char_n]
+        res = self.ram_banks[self.selected_bank][chip_n][register_n].data_chars[char_n]
+        debug_log(
+            f"[CPU] Reading {binary_to_string(res)} from data RAM bank {self.selected_bank} chip {chip_n} register {register_n} char {char_n}")
+        return res
 
     def set_data_ram_char(self, setval: list[bool]) -> None:
         chip_n = binary_to_int(self.selected_addr[0:2])
         register_n = binary_to_int(self.selected_addr[2:4])
         char_n = binary_to_int(self.selected_addr[4:8])
         self.ram_banks[self.selected_bank][chip_n][register_n].data_chars[char_n] = setval.copy()
+        debug_log(
+            f"[CPU] Wrote {binary_to_string(setval)} to data RAM bank {self.selected_bank} chip {chip_n} register {register_n} char {char_n}")
 
     def get_status_ram_chars(self) -> list[list[bool]]:
         chip_n = binary_to_int(self.selected_addr[0:2])
@@ -115,7 +121,11 @@ class Memory:
             self.program_ram_write_enable = False
         n = 0
         for i in set_to:
-            self.rom_ports[port_n].lines[n].status = i
+            line = self.rom_ports[port_n].lines[n]
+            if line.io == InputOrOutput.OUTPUT:
+                line.status = i
+            else:
+                debug_log(f"[CPU] Not writing to port {port_n}, as it is an input port")
             n += 1
 
     def set_ramo_port(self, set_to: list[bool]) -> None:
@@ -142,8 +152,7 @@ class Intel4004:
             self.pointer: int = 0
 
         def push(self, addr: list[bool]):
-            if len(addr) != 12:
-                raise Exception("Addresses pushed to the stack must be 12 bits")
+            assert len(addr) == 12, "Addresses pushed to the stack must be 12 bits"
             self.regs[self.pointer] = addr.copy()
             if self.pointer == 2:
                 self.pointer = 0

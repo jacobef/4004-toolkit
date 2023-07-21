@@ -96,8 +96,8 @@ NOP, INC, ADD, SUB, LD, XCH, LDM, IAC, DAC, CLB, CLC, TCC, CMC, BBL, JMS, JUN, J
 KBP, STC, TCS, ISZ, DCL, SRC, RDM, RD0, RD1, RD2, RD3, WR0, WR1, WR2, WR3, RDR, ADM, WRM, WRR, WMP, SBM, WPM, STOP)
 
 
-def get_instr_by_mnemonic(mnemonic: str) -> Instruction:
+def get_instr_by_mnemonic(mnemonic: str) -> Instruction | None:
     for instr in instructions:
         if instr.mnemonic == mnemonic:
             return instr
-    raise Exception(f"Invalid mnemonic {mnemonic}")
+    return None

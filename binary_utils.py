@@ -37,10 +37,9 @@ def bin_nums_as_eq_len(num1: list[bool], num2: list[bool]) -> (list[bool], list[
     return padded_num1, padded_num2
 
 
-def add_binary(num1: list[bool], num2: list[bool]) -> BinaryAddSubResult:
+def add_binary(num1: list[bool], num2: list[bool], carry: bool) -> BinaryAddSubResult:
     num1, num2 = bin_nums_as_eq_len(num1, num2)
     answer = []
-    carry = False
     for bit1, bit2 in reversed(list(zip(num1, num2))):
         bits_added = add_bits(bit1, bit2, carry)
         carry = bits_added.carry
@@ -48,15 +47,8 @@ def add_binary(num1: list[bool], num2: list[bool]) -> BinaryAddSubResult:
     return BinaryAddSubResult(answer, carry)
 
 
-def sub_binary(num1: list[bool], num2: list[bool]) -> BinaryAddSubResult:
-    num1, num2 = bin_nums_as_eq_len(num1, num2)
-    num1_plus_comp_of_num2 = add_binary(num1, complement(num2))
-    return add_binary(num1_plus_comp_of_num2.lower_bits,
-                      [True])
-
-
-def complement(bits: list[bool]) -> list[bool]:
-    return [not bit for bit in bits]
+def sub_binary(num1: list[bool], num2: list[bool], carry: bool) -> BinaryAddSubResult:
+    return add_binary(num1, [not bit for bit in num2], not carry)
 
 
 def binary_to_string(num: list[bool]) -> str:
@@ -83,9 +75,9 @@ def binary_to_int(num: list[bool]):
 
 
 def int_to_binary(num: int, n_digits: int) -> list[bool]:
+    assert num >= 0, f"Can't convert negative number ({num}) to binary"
     res = string_to_binary(bin(num)[2:])
-    if len(res) > n_digits:
-        raise Exception("Result exceeds ", n_digits, "digits")
+    assert len(res) <= n_digits, f"Result exceeds {n_digits} digits"
     while len(res) != n_digits:
         res.insert(0, False)
     return res

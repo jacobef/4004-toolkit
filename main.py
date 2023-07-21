@@ -1,7 +1,8 @@
 import os
+from typing import Callable
 
-from assemble import assemble
-from devices import Keyboard, Monitor
+from assemble import assemble, GivenArgType
+from devices import Keyboard, Monitor, BetterMonitor, BetterMonitorTester
 from run_code import *
 from disassemble import disassemble
 from cpu import *
@@ -57,10 +58,6 @@ def main():
     while True:
         inp = getkey()
         queue.insert(0, inp)
-        # if inp == "q":
-        #     monitor.on = False
-        #     sleep(0.5)
-        #     os._exit(0)
 
 
 def queue_to_kb(queue: list[str], kb: Keyboard):
@@ -128,7 +125,6 @@ print("======")
 print(cpu_badge("Intel 4004"))
 
 main()
-
 # =====DO NOT DELETE=====
 # 4004 and 4040 PDFs:
 # PDF 1: http://bitsavers.trailing-edge.com/components/intel/MCS4/MCS-4_Assembly_Language_Programming_Manual_Dec73.pdf

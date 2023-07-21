@@ -41,4 +41,4 @@ def get_args(instruction: Instruction, prgm_cntr: list[bool], prgm_mem: list[boo
 
 
 def addr_of_next_instr(prgm_cntr: list[bool], current_instr: Instruction) -> list[bool]:
-    return add_binary(prgm_cntr, int_to_binary(current_instr.n_bytes, n_digits=12)).lower_bits
+    return add_binary(prgm_cntr, int_to_binary(current_instr.n_bytes, n_digits=12), False).lower_bits

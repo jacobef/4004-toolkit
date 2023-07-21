@@ -13,10 +13,9 @@ def load_machine_code(cpu: Intel4004, code: bytearray):
 
 
 def single_step(cpu: Intel4004, quiet: bool = False):
-    start_time = time()
-    while time() < start_time + 0.001:
-        pass
-
+    # start_time = time()
+    # while time() < start_time + 0.001:
+    #     pass
     instruction = get_instr(cpu.prgm_cntr, cpu.memory.rom)
     args = get_args(instruction, cpu.prgm_cntr, cpu.memory.rom)
     if not quiet:
@@ -27,18 +26,18 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     if instruction == NOP:
         pass
     elif instruction == INC:
-        res = add_binary(cpu.index_regs[binary_to_int(args[0])], [True])
+        res = add_binary(cpu.index_regs[binary_to_int(args[0])], [True], False)
         cpu.index_regs[binary_to_int(args[0])] = res.lower_bits
     elif instruction == ADD:
         reg = cpu.index_regs[binary_to_int(args[0])]
-        res = add_binary(cpu.accumulator, reg)
+        res = add_binary(cpu.accumulator, reg, cpu.carry_bit)
         cpu.accumulator = res.lower_bits
         cpu.carry_bit = res.carry
     elif instruction == LDM:
         cpu.accumulator = args[0]
     elif instruction == SUB:
         reg = cpu.index_regs[binary_to_int(args[0])]
-        res = sub_binary(cpu.accumulator, reg)
+        res = sub_binary(cpu.accumulator, reg, cpu.carry_bit)
         cpu.accumulator = res.lower_bits
         cpu.carry_bit = res.carry
     elif instruction == LD:
@@ -48,11 +47,11 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.index_regs[binary_to_int(args[0])] = cpu.accumulator
         cpu.accumulator = old_reg
     elif instruction == IAC:
-        res = add_binary(cpu.accumulator, [True])
+        res = add_binary(cpu.accumulator, [True], False)
         cpu.accumulator = res.lower_bits
         cpu.carry_bit = res.carry
     elif instruction == DAC:
-        res = sub_binary(cpu.accumulator, [True])
+        res = sub_binary(cpu.accumulator, [True], False)
         cpu.accumulator = res.lower_bits
         cpu.carry_bit = res.carry
     elif instruction == CLB:
@@ -66,7 +65,7 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == CMC:
         cpu.carry_bit = not cpu.carry_bit
     elif instruction == CMA:
-        cpu.accumulator = complement(cpu.accumulator)
+        cpu.accumulator = [not bit for bit in cpu.accumulator]
     elif instruction == JUN:
         cpu.prgm_cntr = args[0]
     elif instruction == JCN:
@@ -95,27 +94,25 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.stack.push(cpu.prgm_cntr)
         cpu.prgm_cntr = args[0]
     elif instruction == BBL:
-        cpu.prgm_cntr = cpu.stack.pop()
+        ret_to = cpu.stack.pop()
+        cpu.prgm_cntr = ret_to
         cpu.accumulator = args[0]
     elif instruction == DAA:
         if binary_to_int(cpu.accumulator) > 9 or cpu.carry_bit:
-            add_res = add_binary(cpu.accumulator, int_to_binary(6, n_digits=4))
+            add_res = add_binary(cpu.accumulator, int_to_binary(6, n_digits=4), False)
             cpu.accumulator = add_res.lower_bits
             if add_res.carry:
                 cpu.carry_bit = True
     elif instruction == RAL:
-        old_carry = cpu.carry_bit
-        cpu.carry_bit, cpu.accumulator = cpu.accumulator[0], cpu.accumulator[1:] + [old_carry]
+        cpu.carry_bit, cpu.accumulator = cpu.accumulator[0], cpu.accumulator[1:] + [cpu.carry_bit]
     elif instruction == RAR:
-        old_carry = cpu.carry_bit
-        cpu.carry_bit, cpu.accumulator = cpu.accumulator[3], [old_carry] + cpu.accumulator[:-1]
+        cpu.carry_bit, cpu.accumulator = cpu.accumulator[3], [cpu.carry_bit] + cpu.accumulator[:-1]
     elif instruction == KBP:
-        accu = cpu.accumulator
-        n_ones = accu.count(True)
+        n_ones = cpu.accumulator.count(True)
         if n_ones > 1:
             cpu.accumulator = [True, True, True, True]
         elif n_ones == 1:
-            cpu.accumulator = int_to_binary(4 - accu.index(True), n_digits=4)
+            cpu.accumulator = int_to_binary(4 - cpu.accumulator.index(True), n_digits=4)
     elif instruction == STC:
         cpu.carry_bit = True
     elif instruction == TCS:
@@ -123,7 +120,7 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.carry_bit = False
     elif instruction == ISZ:
         reg_n = binary_to_int(args[0])
-        register_contents = add_binary(cpu.index_regs[reg_n], [False, False, False, True]).lower_bits
+        register_contents = add_binary(cpu.index_regs[reg_n], [True], False).lower_bits
         cpu.index_regs[reg_n] = register_contents
         if register_contents != [False, False, False, False]:
             cpu.prgm_cntr[4:] = args[1]
@@ -149,29 +146,28 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == WR2:
         cpu.memory.get_status_ram_chars()[2] = cpu.accumulator.copy()
     elif instruction == WR3:
-        cpu.memory.get_status_ram_chars()[3] = cpu.accumulator
+        cpu.memory.get_status_ram_chars()[3] = cpu.accumulator.copy()
     elif instruction == RDR:
         port = cpu.memory.get_romio_port()
         port_n = binary_to_int(cpu.memory.selected_addr[4:])
         cpu.accumulator = [line.status for line in port.lines]
-        if port_n == 0 and cpu.index_regs[4] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
+        if port_n == 0 and cpu.index_regs[10] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
             debug_log(f"[CPU] Received character separator")
 
     elif instruction == ADM:
-        data_char = cpu.memory.get_data_ram_char().copy()
-        added = add_binary(cpu.accumulator, data_char)
+        added = add_binary(cpu.accumulator, cpu.memory.get_data_ram_char(), cpu.carry_bit)
         cpu.accumulator = added.lower_bits
         cpu.carry_bit = added.carry
     elif instruction == WRM:
         cpu.memory.set_data_ram_char(cpu.accumulator)
     elif instruction == WRR:
-        debug_log(f"[CPU] Writing {binary_to_int(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[4:])}")
+        debug_log(f"[CPU] Writing {binary_to_string(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[4:])}")
         cpu.memory.set_romio_port(cpu.accumulator)
         debug_log(f"[CPU] Finished writing to port")
     elif instruction == WMP:
         cpu.memory.set_ramo_port(cpu.accumulator)
     elif instruction == SBM:
-        result = sub_binary(cpu.accumulator, cpu.memory.get_data_ram_char())
+        result = sub_binary(cpu.accumulator, cpu.memory.get_data_ram_char(), cpu.carry_bit)
         cpu.accumulator = result.lower_bits
         cpu.carry_bit = result.carry
     elif instruction == WPM:

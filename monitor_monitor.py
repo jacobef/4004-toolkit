@@ -5,8 +5,7 @@ listener = Listener(address)
 conn = listener.accept()
 while True:
     msg = conn.recv()
-    if msg == "\177": # ASCII DEL character
-        print("\b \b", end="")
+    if msg == "\177":  # ASCII DEL character
+        print("\b \b", end="", flush=True)
     else:
-        print(msg, end="")
-listener.close()
+        print(msg, end="", flush=True)
