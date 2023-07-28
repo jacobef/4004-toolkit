@@ -1,0 +1,281 @@
+JUN HI
+
+FN, NOP
+JUN RET
+
+NOP
+NOP
+
+
+RET, NOP
+    / Save 0R to the stack. We'll use 0R, 8R, and 9R for all operations within RET.
+    JMS PSH
+    
+    / Set write enable
+    14 -> 8R
+    SRC 4P
+    LDM 1
+    WRR
+    / Send high 4 bits of program RAM address
+    15 -> 8R
+    SRC 4P
+    *+144 -> 8R _ _
+    LD 8R
+    WRR
+    / Send low 8 bits of program RAM address
+    *+140 -> _ 8R 9R
+    SRC 4P
+
+    / Write the JUN opcode
+    LDM 0100B
+    WPM
+    / Write the first nibble of the address to jump to, into program memory
+        / Get the first nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 4
+            4 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the first nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 4
+            LDM 4
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+106 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+102 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Write the second nibble of the address to jump to, into program memory
+        / Get the second nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 3
+            3 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the second nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 3
+            LDM 3
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+69 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+65 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Write the third nibble of the address to jump to, into program memory
+        / Get the third nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 2
+            2 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the third nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 2
+            LDM 2
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+31 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+27 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Clear write enable
+    14 -> 8R
+    SRC 4P
+    LDM 0
+    WRR
+
+    / Restore 0R
+    JMS POP
+    / Decrement the stack pointer by 3 to pop off the address to jump to
+    3 -> 8R
+    LD 15R
+    CLC
+    SUB 8R
+    XCH 15R
+    CMC
+    0 -> 8R
+    LD 14R
+    SUB 8R
+    XCH 14R
+
+    / NOPs will be replaced with JUN instruction
+    NOP
+    NOP
+
+/ PSH(val: 4) - Push a 4-bit value to the stack.
+/ Does not clobber any registers (aside from incrementing 7P, which is the stack counter).
+PSH, NOP
+    / Select RAM bank 0
+    LDM 0
+    DCL
+    / Use the stack counter as the address
+    SRC 7P
+    / Write the argument to the selected address
+    LD 0R
+    WRM
+    / Increment the stack counter
+    LD 15R
+    LDM 1
+    CLC
+    ADD 15R
+    XCH 15R
+    TCC
+    ADD 14R
+    XCH 14R
+
+    JCN 1010B RPS / Crash if stack overflow
+    JUN DIE
+    RPS, BBL 0
+
+/ POP() -> val: 4 - Pop from the stack. Does not clobber any registers (aside from decrementing 7P, and returning to 0R)
+POP, NOP
+    / Decrement the stack counter
+    / Lower 4 bits
+    1 -> 0R
+    LD 15R
+    CLC
+    SUB 0R
+    XCH 15R
+    / Upper 4 bits
+    0 -> 0R
+    LD 14R
+    CMC
+    SUB 0R
+    XCH 14R
+    JCN 0010B DRD / Crash if stack underflow
+    JUN DIE
+    / Do the read; will always be in RAM bank 0
+    DRD, LDM 0
+    DCL
+    SRC 7P
+    RDM
+    XCH 0R
+    BBL 0
+
+
+/ PHA(val: 12) - Push a 12-bit address to the stack.
+/ Does not clobber any registers except 0R-2R (and 7P)
+PHA, NOP
+    JMS PSH
+    1R -> 0R
+    JMS PSH
+    2R -> 0R
+    JMS PSH
+    BBL 0
+
+/ PPA() - Pop a 12-bit address from the stack.
+PPA, NOP
+    JMS POP
+    0R -> 2R
+    JMS POP
+    0R -> 1R
+    JMS POP
+    BBL 0
+
+/ BPK(n: 8) -> val: 4 - Peek at the top of the stack minus (n-1). Calling it with 0 is invalid.
+/ For example, calling it with 1 will look at the top of the stack, and calling it with 2 will look at the second-to-top of the stack.
+/ Does not clobber any registers except 0P (and 7P)
+BPK, NOP
+    / Subtract the argument from the stack pointer and store it in 0P
+    LD 15R
+    CLC
+    SUB 1R
+    XCH 1R
+    CMC
+    LD 14R
+    SUB 0R
+    XCH 0R
+    / Select RAM bank 0
+    LDM 0
+    DCL
+    / Use the subtraction result as the address
+    SRC 0P
+    / Read from the selected address
+    RDM
+    XCH 0R
+    BBL 0
+
+DIE, JUN DIE
+
+HI, NOP
+1 -> 0R
+2 -> 1R
+3 -> 2R
+4 -> 3R
+5 -> 4R
+6 -> 5R
+7 -> 6R
+8 -> 7R
+CALL FN
+INC 9R

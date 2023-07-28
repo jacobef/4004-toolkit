@@ -1,5 +1,4 @@
 import re
-from dataclasses import dataclass
 from textwrap import wrap
 
 from instructions import *
@@ -59,9 +58,9 @@ def is_assignment(line: str) -> bool:
     return len(line_split) == 3 and line_split[1] == "="
 
 
-def eval_assignment(line: str, labels_to_values: dict[str, int]) -> (str, int):
+def eval_assignment(line: str, pc: int, labels_to_values: dict[str, int]) -> (str, int):
     label = line.split(" ")[0]
-    value = expr_as_int(line.split(" ")[2], labels_to_values)
+    value = expr_as_int(line.split(" ")[2], pc, labels_to_values)
     return label, value
 
 
@@ -71,11 +70,16 @@ def get_labels_to_values(code: list[str]) -> dict[str, int]:
     for line in code:
         if is_assignment(line):
             continue
-        label, mnemonic, args = get_label_mnemonic_args(line)
-        if label:
-            labels_to_values[label] = pseudo_pc
-        instruction = get_instr_by_mnemonic(mnemonic)
-        pseudo_pc += instruction.n_bytes if instruction else 1
+        elif "->" in line.split(" "):
+            macro_expanded = expand_arrow_macro(line, pseudo_pc)
+            for expanded_line in macro_expanded:
+                pseudo_pc += len(assemble_line(expanded_line, pseudo_pc)) // 8
+        else:
+            label, mnemonic, args = get_label_mnemonic_args(line)
+            if label:
+                labels_to_values[label] = pseudo_pc
+            instruction = get_instr_by_mnemonic(mnemonic)
+            pseudo_pc += instruction.n_bytes if instruction else 1
     return labels_to_values
 
 
@@ -127,12 +131,14 @@ def get_char_expr_ord(expr: str) -> int:
         return ord(inner_char)
 
 
-def expr_as_int(arg: str, labels_to_values: dict[str, int] | None = None) -> int:
+def expr_as_int(arg: str, pc: int, labels_to_values: dict[str, int] | None = None) -> int:
     if "+" in arg or "-" in arg:
-        term1 = expr_as_int(re.split(r"[+-]", arg)[0], labels_to_values)
-        term2 = expr_as_int(re.split(r"[+-]", arg)[1], labels_to_values)
+        term1 = expr_as_int(re.split(r"[+-]", arg)[0], pc, labels_to_values)
+        term2 = expr_as_int(re.split(r"[+-]", arg)[1], pc, labels_to_values)
         res = term1 + term2 if "+" in arg else term1 - term2
         return res
+    elif arg == "*":
+        return pc
     elif arg[0] == "'":
         return get_char_expr_ord(arg)
     elif arg[0] not in "1234567890" and labels_to_values:
@@ -152,16 +158,16 @@ def expr_as_int(arg: str, labels_to_values: dict[str, int] | None = None) -> int
         return int(arg)
 
 
-def assemble_line(line: str, pseudo_pc: int, labels_to_values: dict[str, int]) -> str:
+def assemble_line(line: str, pseudo_pc: int, labels_to_values: dict[str, int] | None = None) -> str:
     out = ""
 
     label, mnemonic, args = get_label_mnemonic_args(line)
     instruction = get_instr_by_mnemonic(mnemonic)
     if not instruction:
-        return binary_to_string(int_to_binary(expr_as_int(mnemonic), n_digits=8))
+        return binary_to_string(int_to_binary(expr_as_int(mnemonic, pseudo_pc), n_digits=8))
 
     opcode_parsed = parse_opcode(instruction.opcode)
-    int_args = [expr_as_int(arg, labels_to_values) for arg in args]
+    int_args = [expr_as_int(arg, pseudo_pc, labels_to_values) for arg in args]
 
     if "a" * 8 in opcode_parsed:
         pc_after_instr = int_to_binary(pseudo_pc+2, n_digits=12)
@@ -198,19 +204,21 @@ def n_nibbles(exprs: list[str]):
     return res
 
 
-def expand_arrow_macro(line: str) -> list[str]:
+def expand_arrow_macro(line: str, pc: int) -> list[str]:
     in_strs = []
     out_strs = []
     for expr_str in line.split("->")[0].strip().split(" "):
         if expr_str[-1] == "P":
-            in_strs.append(f"{expr_as_int(expr_str)*2}R")
-            in_strs.append(f"{expr_as_int(expr_str)*2+1}R")
+            in_strs.append(f"{expr_as_int(expr_str, pc)*2}R")
+            in_strs.append(f"{expr_as_int(expr_str, pc)*2+1}R")
+        elif "*" in expr_str:
+            in_strs.append(str(expr_as_int(expr_str, pc)))
         else:
             in_strs.append(expr_str)
     for expr_str in line.split("->")[1].strip().split(" "):
         if expr_str[-1] == "P":
-            out_strs.append(f"{expr_as_int(expr_str)*2}R")
-            out_strs.append(f"{expr_as_int(expr_str)*2+1}R")
+            out_strs.append(f"{expr_as_int(expr_str, pc)*2}R")
+            out_strs.append(f"{expr_as_int(expr_str, pc)*2+1}R")
         else:
             out_strs.append(expr_str)
 
@@ -221,13 +229,15 @@ def expand_arrow_macro(line: str) -> list[str]:
         in_num = int_to_binary(int(in_strs[0]), n_digits=len(out_strs)*4)
         in_nibbles = wrap(binary_to_string(in_num), 4)
         for nibble, reg in zip(in_nibbles, out_strs):
-            result.append(f"LDM {nibble}B")
-            result.append(f"XCH {reg}")
+            if reg != "_":
+                result.append(f"LDM {nibble}B")
+                result.append(f"XCH {reg}")
     else:
         assert len(in_strs) == len(out_strs), "In and out sizes don't match"
         for in_reg, out_reg in zip(in_strs, out_strs):
-            result.append(f"LD {in_reg}")
-            result.append(f"XCH {out_reg}")
+            if out_reg != "_":
+                result.append(f"LD {in_reg}")
+                result.append(f"XCH {out_reg}")
     return result
 
 
@@ -236,20 +246,68 @@ def assemble(filename: str) -> bytearray:
         code = file.read().split("\n")
 
     code_cleaned = [remove_comment(line).strip() for line in code if remove_comment(line).strip()]
-    code_no_macros = []
+    code_calls_expanded = []
     for line in code_cleaned:
-        if "->" in line.split(" "):
-            code_no_macros += expand_arrow_macro(line)
+        if len(line.split(" ")) == 2 and line.split(" ")[0] == "CALL":
+            for line2 in f"""
+LDM 0
+DCL
+/ Push the first nibble of the return address
+*+38 -> 8R _ _
+SRC 7P
+LD 8R
+WRM
+LDM 1
+CLC
+ADD 15R
+XCH 15R
+TCC
+ADD 14R
+XCH 14R
+/ Push the second nibble
+*+26 -> _ 8R _
+SRC 7P
+LD 8R
+WRM
+LDM 1
+CLC
+ADD 15R
+XCH 15R
+TCC
+ADD 14R
+XCH 14R
+/ Push the third nibble
+*+14 -> _ _ 8R
+SRC 7P
+LD 8R
+WRM
+LDM 1
+CLC
+ADD 15R
+XCH 15R
+TCC
+ADD 14R
+XCH 14R
+/ Jump to the function
+JUN {line.split(" ")[1]}
+""".split("\n"):
+                if remove_comment(line2).strip():
+                    code_calls_expanded.append(remove_comment(line2).strip())
         else:
-            code_no_macros.append(line)
-    labels_to_values = get_labels_to_values(code_no_macros)
+            code_calls_expanded.append(line)
+
+    labels_to_values = get_labels_to_values(code_calls_expanded)
     debug_log(f"[ASSEMBLER] address labels: {labels_to_values}")
     out = ""
 
-    for line in code_no_macros:
+    for line in code_calls_expanded:
         if is_assignment(line):
-            label, value = eval_assignment(line, labels_to_values)
+            label, value = eval_assignment(line, len(out) // 8, labels_to_values)
             labels_to_values[label] = value
+        elif "->" in line.split(" "):
+            macro_expanded = expand_arrow_macro(line, len(out) // 8)
+            for expanded_line in macro_expanded:
+                out += assemble_line(expanded_line, len(out) // 8)
         else:
             out += assemble_line(line, len(out) // 8, labels_to_values)
     out_bytes = bytearray(int(out[i: i + 8], 2) for i in range(0, len(out), 8))

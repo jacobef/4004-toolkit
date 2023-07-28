@@ -36,28 +36,30 @@ def setup_ports():
 
 
 def main():
-    machine_code = assemble("main")
+    machine_code = assemble("wpm_test")
     f = open("main.4004out", "wb")
     f.write(machine_code)
     f.close()
     cpu = Intel4004(setup_ports())
-    keyboard = Keyboard(write_to=(cpu.memory.rom_ports[0], cpu.memory.rom_ports[1]))
-
-    monitor = Monitor(read_from=(cpu.memory.rom_ports[2], cpu.memory.rom_ports[3]))
-    monitor_thread = Thread(target=monitor.turn_on)
-    monitor_thread.start()
-    print("Warming up the monitor... (yes really)")
-    sleep(0.3)
-
     load_machine_code(cpu, machine_code)
-    cpu_thread = Thread(target=lambda: turn_on(cpu))
-    cpu_thread.start()
-
-    queue = []
-    Thread(target=lambda: queue_to_kb(queue, keyboard)).start()
-    while True:
-        inp = getkey()
-        queue.insert(0, inp)
+    start_debug(cpu)
+    # keyboard = Keyboard(write_to=(cpu.memory.rom_ports[0], cpu.memory.rom_ports[1]))
+    #
+    # monitor = Monitor(read_from=(cpu.memory.rom_ports[2], cpu.memory.rom_ports[3]))
+    # monitor_thread = Thread(target=monitor.turn_on)
+    # monitor_thread.start()
+    # print("Warming up the monitor... (yes really)")
+    # sleep(0.3)
+    #
+    # load_machine_code(cpu, machine_code)
+    # cpu_thread = Thread(target=lambda: turn_on(cpu))
+    # cpu_thread.start()
+    #
+    # queue = []
+    # Thread(target=lambda: queue_to_kb(queue, keyboard)).start()
+    # while True:
+    #     inp = getkey()
+    #     queue.insert(0, inp)
 
 
 def queue_to_kb(queue: list[str], kb: Keyboard):
@@ -82,26 +84,29 @@ def start_debug(cpu):
             print(cpu)
         elif cmd == "pkb":
             print(cpu.memory.rom_ports[0].lines + cpu.memory.rom_ports[1].lines)
-        elif cmd == "pm":
-            print(cpu.memory.rom_ports[2].lines + cpu.memory.rom_ports[3].lines)
+        elif cmd == "pp":
+            print(cpu.memory.rom_ports)
         elif cmd == "d":
-            print(disassemble(cpu, 5, 5))
+            print(disassemble(cpu, 10, 10))
         elif cmd == "sp":
             single_step(cpu)
             print(cpu)
         elif cmd == "sd":
             single_step(cpu)
-            print(disassemble(cpu, 5, 5))
+            print(disassemble(cpu, 10, 10))
         elif cmd == "q":
             quit()
         elif cmd == "a":
-            machine_code = assemble("main")
+            machine_code = assemble("wpm_test")
             f = open("main.4004out", "wb")
             f.write(machine_code)
             f.close()
             cpu.prgm_cntr = [False for _ in range(12)]
             load_machine_code(cpu, machine_code)
             print("Re-assembled")
+        elif cmd.split(" ")[0] == "c":
+            while binary_to_int(cpu.prgm_cntr) != int(cmd.split(" ")[1]):
+                single_step(cpu)
         elif cmd == "help":
             print(
                 "Type s to run one line, sd to run one line and then dissasemble, r to run all of the code, p to print CPU state, d to disassemble the assembly, cs to get the CPU specs, sp to step and print the CPU state, a to re-assemble to code, pdf to get the PDFs with helpful info, hit the enter key to repeat the last command, or q to quit")

@@ -320,7 +320,7 @@ PKB, JMS RKB
                 / Put the command start address in 0R-2R
                 JMS PPA
                 / Do the call and push the result to the stack
-                JMS FSP
+                JMS ACV
                 JMS PHA
             / Call DTC
                 / Load cmd_start into 6R-8R
@@ -531,7 +531,8 @@ PHA, NOP
     JMS PSH
     BBL 0
 
-/ PPA() - Pop a 12-bit address from the stack.
+/ PPA() -> 12 - Pop a 12-bit address from the stack.
+/ Doesn't clobber any registers (except 0R-2R and 7P)
 PPA, NOP
     JMS POP
     0R -> 2R
@@ -827,6 +828,146 @@ ECO, NOP
         JMS POP
         0R -> 11R
         BBL 0
+
+/ ACV(cmd_start: 12, cmd_end: 12) -> argc: 4, argv: 12
+ACV, NOP
+    / Save 0R
+    0R -> 6R
+    / Save 11-13R to the stack
+    11R -> 0R
+    JMS PSH / 0
+    12R -> 0R
+    JMS PSH / 1
+    13R -> 0R
+    JMS PSH / 2
+
+    / Save cmd_start (which will be our command reading counter) to 11R-13R
+    6R 1R 2R -> 11R 12R 13R
+    / Save cmd_end to the stack
+    3R 4R 5R -> 0R 1R 2R
+    JMS PHA / 3 4 5
+    / Initialize argc to 1
+    1 -> 0R
+    JMS PSH / 6
+
+    96 -> 0R 1R 2R
+    / Save the address of argv to the stack and 0R-2R
+    JMS MLC
+    JMS PHA / 7 8 9
+    FIM 0P 3
+    JMS BPA
+    / command reading counter is in 11R-13R
+    / Write the command reading counter (now cmd_start) to argv[0].start
+        / First 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 11R
+        WRM
+        JMS I12
+        / Middle 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 12R
+        WRM
+        JMS I12
+        / Last 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 13R
+        WRM
+        JMS I12
+
+    / Push argv counter (now argv[0].end) to the stack
+    JMS PHA / 10 11 12
+    / Copy cmd_end into 3R-5R
+    FIM 0P 10
+    JMS BPA
+    0R 1R 2R -> 3R 4R 5R
+    / Copy the command reading counter into 0R-2R
+    11R 12R 13R -> 0R 1R 2R
+    / Set our counter to the address of the first space
+    JMS FSP
+    0R 1R 2R -> 11R 12R 13R
+    / Put argv counter (now argv[0].end) into 0R-2R
+    FIM 0P 3
+    JMS BPA
+    / Write the address of the space to argv[0].end
+        / First 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 11R
+        WRM
+        JMS I12
+        / Middle 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 12R
+        WRM
+        JMS I12
+        / Last 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 3P
+        SRC 3P
+        LD 13R
+        WRM
+        JMS I12
+
+    / Restore 11R-13R
+    FIM 0P 11
+    JMS BPK
+    0R -> 13R
+    FIM 0P 12
+    JMS BPK
+    0R -> 12R
+    FIM 0P 13
+    JMS BPK
+    0R -> 11R
+
+    / Save argv into 3R-5R
+    FIM 0P 6
+    JMS BPA
+    0R 1R 2R -> 3R 4R 5R
+    / Put argc into 0R
+    FIM 0P 7
+    JMS BPK
+    / Put argv into 1R-3R
+    3R -> 1R
+    4R -> 2R
+    5R -> 3R
+
+    / Decrement the stack pointer by 7
+    LDM 7
+    XCH 15R
+    SUB 15R
+    XCH 15R
+    CMC
+    LDM 0
+    XCH 14R
+    SUB 14R
+    XCH 14R
+
+    / Restore 11-13R from the stack
+    JMS POP
+    0R -> 13R
+    JMS POP
+    0R -> 12R
+    JMS POP
+    0R -> 11R
+
+    RAV, BBL 0
+
+
 
 
 / FSP(cmd_start: 12, cmd_end: 12) -> space_addr: 12 - Find the first space.

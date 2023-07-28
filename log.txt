@@ -1,0 +1,19 @@
+[0.027143] [ASSEMBLER] address labels: {'FN': 2, 'RET': 7, 'PSH': 164, 'RPS': 182, 'POP': 183, 'DRD': 200, 'PHA': 206, 'PPA': 218, 'BPK': 230, 'DIE': 245, 'HI': 247}
+[20.327328] [CPU] Wrote 0001 to data RAM bank 0 chip 0 register 0 char 0
+[24.211542] [CPU] Wrote 0011 to data RAM bank 0 chip 0 register 0 char 1
+[27.159966] [CPU] Wrote 0000 to data RAM bank 0 chip 0 register 0 char 2
+[42.179419] [CPU] Wrote 0001 to data RAM bank 0 chip 0 register 0 char 3
+[42.180651] [CPU] Writing 0001 to port 14
+[42.181226] [CPU] Writing 0000 to port 15
+[42.181786] [CPU] Wrote 0100 to program RAM address 162 (nibble 0)
+[42.183167] [CPU] Reading 0001 from data RAM bank 0 chip 0 register 0 char 0
+[42.184265] [CPU] Writing 0000 to port 15
+[42.184833] [CPU] Wrote 0001 to program RAM address 162 (nibble 1)
+[42.185959] [CPU] Reading 0011 from data RAM bank 0 chip 0 register 0 char 1
+[42.186995] [CPU] Writing 0000 to port 15
+[42.187542] [CPU] Wrote 0011 to program RAM address 163 (nibble 0)
+[42.188655] [CPU] Reading 0000 from data RAM bank 0 chip 0 register 0 char 2
+[42.189676] [CPU] Writing 0000 to port 15
+[42.190214] [CPU] Wrote 0000 to program RAM address 163 (nibble 1)
+[42.190617] [CPU] Writing 0000 to port 14
+[42.191754] [CPU] Reading 0001 from data RAM bank 0 chip 0 register 0 char 3

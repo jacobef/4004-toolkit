@@ -72,11 +72,9 @@ class Memory:
         self.selected_bank: int = 0
         self.selected_addr: list[bool] = [False] * 8
 
-        self.program_ram: list[list[bool]] = []
+        self.program_ram: list[bool] = [False] * 32768
         self.program_ram_write_enable: bool = False
         self.wpm_half_byte: Literal[0, 1] = 0
-        for _ in range(4096):
-            self.program_ram.append([False] * 8)
 
         self.rom: list[bool] = [False] * 32768
         self.rom_ports: list[ROMPort] = []
@@ -110,11 +108,11 @@ class Memory:
         return self.ram_banks[self.selected_bank][chip_n][register_n].status_chars
 
     def get_romio_port(self) -> ROMPort:
-        port_n = binary_to_int(self.selected_addr[4:])
+        port_n = binary_to_int(self.selected_addr[:4])
         return self.rom_ports[port_n]
 
     def set_romio_port(self, set_to: list[bool]) -> None:
-        port_n = binary_to_int(self.selected_addr[4:])
+        port_n = binary_to_int(self.selected_addr[:4])
         if port_n == 14 and binary_to_int(set_to) == 1:
             self.program_ram_write_enable = True
         elif port_n == 14 and binary_to_int(set_to) == 0:

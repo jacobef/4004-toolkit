@@ -45,8 +45,8 @@ def disassemble(cpu: Intel4004, look_ahead: int = 5, look_behind: int | None = N
     past_pc = False
 
     while instructions_after_pc < look_ahead:
-        instruction = get_instr(pseudo_prgm_cntr, cpu.memory.rom)
-        args = get_args(instruction, pseudo_prgm_cntr, cpu.memory.rom)
+        instruction = get_instr(pseudo_prgm_cntr, cpu.memory.program_ram)
+        args = get_args(instruction, pseudo_prgm_cntr, cpu.memory.program_ram)
 
         line = f"{Fore.BLUE}{binary_to_int(pseudo_prgm_cntr)}{Style.RESET_ALL}: "
         line += f"{Fore.RED}{disas_instr(instruction, args)}{Style.RESET_ALL}"

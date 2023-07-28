@@ -1,3 +1,4 @@
+from textwrap import wrap
 from time import sleep, time
 
 from disassemble import disas_instr
@@ -9,15 +10,15 @@ from colorama import Fore, Style
 
 def load_machine_code(cpu: Intel4004, code: bytearray):
     code_str = ''.join(format(byte, '08b') for byte in code)
-    cpu.memory.rom[:len(code_str)] = string_to_binary(code_str)
+    cpu.memory.program_ram[:len(code_str)] = [bit for byt in [string_to_binary(byte_str) for byte_str in wrap(code_str, 8)] for bit in byt]
 
 
 def single_step(cpu: Intel4004, quiet: bool = False):
     # start_time = time()
     # while time() < start_time + 0.001:
     #     pass
-    instruction = get_instr(cpu.prgm_cntr, cpu.memory.rom)
-    args = get_args(instruction, cpu.prgm_cntr, cpu.memory.rom)
+    instruction = get_instr(cpu.prgm_cntr, cpu.memory.program_ram)
+    args = get_args(instruction, cpu.prgm_cntr, cpu.memory.program_ram)
     if not quiet:
         print(
             f"Executing {Fore.RED}{disas_instr(instruction, args)}{Style.RESET_ALL} at {Fore.BLUE}{binary_to_int(cpu.prgm_cntr)}{Style.RESET_ALL}")
@@ -89,11 +90,20 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == FIN:
         addr = cpu.prgm_cntr[:4] + cpu.index_regs[0] + cpu.index_regs[1]
         addr_int = binary_to_int(addr)
-        cpu.set_register_pair(args[0], cpu.memory.rom[addr_int * 8: addr_int * 8 + 8])
+        cpu.set_register_pair(args[0], cpu.memory.program_ram[addr_int * 8: addr_int * 8 + 8])
     elif instruction == JMS:
         cpu.stack.push(cpu.prgm_cntr)
         cpu.prgm_cntr = args[0]
+        if binary_to_int(args[0]) == 893:
+            debug_log(f"[CPU] Calling ACV with cmd_start={binary_to_int(cpu.index_regs[0]+cpu.index_regs[1]+cpu.index_regs[2])}, cmd_end={binary_to_int(cpu.index_regs[3]+cpu.index_regs[4]+cpu.index_regs[5])}")
+        elif binary_to_int(args[0]) == 1084:
+            debug_log(f"[CPU] Calling FSP with cmd_start={binary_to_int(cpu.index_regs[0]+cpu.index_regs[1]+cpu.index_regs[2])}, cmd_end={binary_to_int(cpu.index_regs[3]+cpu.index_regs[4]+cpu.index_regs[5])}")
+
     elif instruction == BBL:
+        if 1080 < binary_to_int(cpu.prgm_cntr) < 1090:
+            argc = binary_to_int(cpu.index_regs[0])
+            argv = binary_to_int(cpu.index_regs[1]+cpu.index_regs[2]+cpu.index_regs[3])
+            debug_log(f"[CPU] Returning from ACV with argc={argc}, argv={argv}")
         ret_to = cpu.stack.pop()
         cpu.prgm_cntr = ret_to
         cpu.accumulator = args[0]
@@ -161,9 +171,8 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == WRM:
         cpu.memory.set_data_ram_char(cpu.accumulator)
     elif instruction == WRR:
-        debug_log(f"[CPU] Writing {binary_to_string(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[4:])}")
+        debug_log(f"[CPU] Writing {binary_to_string(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[:4])}")
         cpu.memory.set_romio_port(cpu.accumulator)
-        debug_log(f"[CPU] Finished writing to port")
     elif instruction == WMP:
         cpu.memory.set_ramo_port(cpu.accumulator)
     elif instruction == SBM:
@@ -178,9 +187,14 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         nibble_end = nibble_start + 4
 
         if cpu.memory.program_ram_write_enable:
-            cpu.memory.program_ram[addr][nibble_start:nibble_end] = cpu.accumulator.copy()
+            cpu.memory.program_ram[addr*8+nibble_start:addr*8+nibble_end] = cpu.accumulator.copy()
+            debug_log(f"[CPU] Wrote {binary_to_string(cpu.accumulator)} to program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
         else:
-            cpu.accumulator = cpu.memory.program_ram[addr][nibble_start:nibble_end].copy()
+            to_read = cpu.memory.program_ram[addr * 8 + nibble_start:addr * 8 + nibble_end]
+            rom_port_n = 14 if cpu.memory.wpm_half_byte == 0 else 15
+            for line in zip(cpu.memory.rom_ports[rom_port_n].lines, to_read):
+                line.status = to_read
+            debug_log(f"[CPU] Read {binary_to_string(to_read)} from program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
 
         cpu.memory.wpm_half_byte = 0 if cpu.memory.wpm_half_byte == 1 else 1
 
