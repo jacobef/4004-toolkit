@@ -36,30 +36,29 @@ def setup_ports():
 
 
 def main():
-    machine_code = assemble("wpm_test")
+    machine_code = assemble("main")
     f = open("main.4004out", "wb")
     f.write(machine_code)
     f.close()
     cpu = Intel4004(setup_ports())
+
+    keyboard = Keyboard(write_to=(cpu.memory.rom_ports[0], cpu.memory.rom_ports[1]))
+
+    monitor = Monitor(read_from=(cpu.memory.rom_ports[2], cpu.memory.rom_ports[3]))
+    monitor_thread = Thread(target=monitor.turn_on)
+    monitor_thread.start()
+    print("Warming up the monitor... (yes really)")
+    sleep(0.3)
+
     load_machine_code(cpu, machine_code)
-    start_debug(cpu)
-    # keyboard = Keyboard(write_to=(cpu.memory.rom_ports[0], cpu.memory.rom_ports[1]))
-    #
-    # monitor = Monitor(read_from=(cpu.memory.rom_ports[2], cpu.memory.rom_ports[3]))
-    # monitor_thread = Thread(target=monitor.turn_on)
-    # monitor_thread.start()
-    # print("Warming up the monitor... (yes really)")
-    # sleep(0.3)
-    #
-    # load_machine_code(cpu, machine_code)
-    # cpu_thread = Thread(target=lambda: turn_on(cpu))
-    # cpu_thread.start()
-    #
-    # queue = []
-    # Thread(target=lambda: queue_to_kb(queue, keyboard)).start()
-    # while True:
-    #     inp = getkey()
-    #     queue.insert(0, inp)
+    cpu_thread = Thread(target=lambda: turn_on(cpu))
+    cpu_thread.start()
+
+    queue = []
+    Thread(target=lambda: queue_to_kb(queue, keyboard)).start()
+    while True:
+        inp = getkey()
+        queue.insert(0, inp)
 
 
 def queue_to_kb(queue: list[str], kb: Keyboard):
@@ -97,7 +96,7 @@ def start_debug(cpu):
         elif cmd == "q":
             quit()
         elif cmd == "a":
-            machine_code = assemble("wpm_test")
+            machine_code = assemble("main")
             f = open("main.4004out", "wb")
             f.write(machine_code)
             f.close()

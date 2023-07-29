@@ -94,16 +94,7 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == JMS:
         cpu.stack.push(cpu.prgm_cntr)
         cpu.prgm_cntr = args[0]
-        if binary_to_int(args[0]) == 893:
-            debug_log(f"[CPU] Calling ACV with cmd_start={binary_to_int(cpu.index_regs[0]+cpu.index_regs[1]+cpu.index_regs[2])}, cmd_end={binary_to_int(cpu.index_regs[3]+cpu.index_regs[4]+cpu.index_regs[5])}")
-        elif binary_to_int(args[0]) == 1084:
-            debug_log(f"[CPU] Calling FSP with cmd_start={binary_to_int(cpu.index_regs[0]+cpu.index_regs[1]+cpu.index_regs[2])}, cmd_end={binary_to_int(cpu.index_regs[3]+cpu.index_regs[4]+cpu.index_regs[5])}")
-
     elif instruction == BBL:
-        if 1080 < binary_to_int(cpu.prgm_cntr) < 1090:
-            argc = binary_to_int(cpu.index_regs[0])
-            argv = binary_to_int(cpu.index_regs[1]+cpu.index_regs[2]+cpu.index_regs[3])
-            debug_log(f"[CPU] Returning from ACV with argc={argc}, argv={argv}")
         ret_to = cpu.stack.pop()
         cpu.prgm_cntr = ret_to
         cpu.accumulator = args[0]
@@ -159,7 +150,7 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.memory.get_status_ram_chars()[3] = cpu.accumulator.copy()
     elif instruction == RDR:
         port = cpu.memory.get_romio_port()
-        port_n = binary_to_int(cpu.memory.selected_addr[4:])
+        port_n = binary_to_int(cpu.memory.selected_addr[:4])
         cpu.accumulator = [line.status for line in port.lines]
         if port_n == 0 and cpu.index_regs[10] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
             debug_log(f"[CPU] Received character separator")
@@ -171,7 +162,9 @@ def single_step(cpu: Intel4004, quiet: bool = False):
     elif instruction == WRM:
         cpu.memory.set_data_ram_char(cpu.accumulator)
     elif instruction == WRR:
-        debug_log(f"[CPU] Writing {binary_to_string(cpu.accumulator)} to port {binary_to_int(cpu.memory.selected_addr[:4])}")
+        port_n = binary_to_int(cpu.memory.selected_addr[:4])
+        if port_n not in (14, 15):
+            debug_log(f"[CPU] Writing {binary_to_string(cpu.accumulator)} to port {port_n}")
         cpu.memory.set_romio_port(cpu.accumulator)
     elif instruction == WMP:
         cpu.memory.set_ramo_port(cpu.accumulator)
@@ -188,7 +181,7 @@ def single_step(cpu: Intel4004, quiet: bool = False):
 
         if cpu.memory.program_ram_write_enable:
             cpu.memory.program_ram[addr*8+nibble_start:addr*8+nibble_end] = cpu.accumulator.copy()
-            debug_log(f"[CPU] Wrote {binary_to_string(cpu.accumulator)} to program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
+            # debug_log(f"[CPU] Wrote {binary_to_string(cpu.accumulator)} to program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
         else:
             to_read = cpu.memory.program_ram[addr * 8 + nibble_start:addr * 8 + nibble_end]
             rom_port_n = 14 if cpu.memory.wpm_half_byte == 0 else 15

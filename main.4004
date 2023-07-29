@@ -47,169 +47,16 @@
 0
 0
 0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-
 
 / Set the stack counter to 0
 FIM 7P 0
 
 / Initialize malloc
-JMS IEP
+CALL IEP
 
 / Allocate 128 nibbles (64 characters) for the command
 128 -> 0R 1R 2R
-JMS MLC
+CALL MLC
 0R 1R 2R -> 3R 4R 5R
 / Push it to the stack
 3R -> 0R
@@ -228,14 +75,15 @@ JMS PSH / 5
 
 / Write "$ " to the monitor
 FIM 0P '$'
-JMS WCR
+CALL WCR
 FIM 0P '\s'
-JMS WCR
+CALL WCR
 
 / Keyboard polling loop
 / Set expecting_char to 0 (false)
 0 -> 10R
-PKB, JMS RKB
+PKB, NOP
+    JMS RKB
     / This will borrow if the high bit of the character is set (indicating the character separator)
     LDM 0111B
     CLC
@@ -246,26 +94,28 @@ PKB, JMS RKB
     CHR, NOP
         / If expecting_char is 0 (false), ignore the received character
         LD 10R
-        JCN 0100B PKB
+        JCN 1100B ECR
+        JUN PKB
         / Otherwise:
+        ECR, NOP
         / Set expecting_char to 0 (false)
         0 -> 10R
         / Save 0P (the received character) in 6P
         0P -> 6P
         / Check if the character is DEL
         FIM 1P '\d'
-        JMS CMP
+        CALL CMP
         LD 0R
         JCN 0100B DWT
         JUN DEL
         / Write the character to the monitor
         DWT, NOP
         6P -> 0P
-        JMS WCR
+        CALL WCR
         / Check if the character is enter
         6P -> 0P
         FIM 1P '\n'
-        JMS CMP
+        CALL CMP
         LD 0R
         JCN 0100B NRM
         JUN ENT
@@ -285,7 +135,7 @@ PKB, JMS RKB
             WRM
 
             / Increment the cached command-end pointer
-            JMS I12
+            CALL I12
 
             / Second 4 bits
             LD 0R
@@ -296,7 +146,7 @@ PKB, JMS RKB
             WRM
 
             / Increment the cached command-end pointer
-            JMS I12
+            CALL I12
 
             / Write the incremented command-end pointer back to the stack
             2R -> 4R
@@ -320,7 +170,7 @@ PKB, JMS RKB
                 / Put the command start address in 0R-2R
                 JMS PPA
                 / Do the call and push the result to the stack
-                JMS ACV
+                CALL FSP
                 JMS PHA
             / Call DTC
                 / Load cmd_start into 6R-8R
@@ -340,23 +190,25 @@ PKB, JMS RKB
                 / cmd_start back to 0R-2R
                 6R 7R 8R -> 0R 1R 2R
                 / Get the command code; if it's 0, the command wasn't recognized
-                JMS DTC
+                CALL DTC
                 LD 0R
-                JCN 0100B NCM
-
-            / Copy the command-end pointer into 3R-5R
-            FIM 0P 3
-            JMS FPA
-            0R 1R 2R -> 3R 4R 5R
-            / Pop first_space into 0R-2R
-            JMS POP
-            0R -> 2R
-            JMS POP
-            0R -> 1R
-            JMS POP
+                JCN 1100B CEO
+                JUN NCM
             / Call echo
-            JMS ECO
-            JUN SLB
+                CEO, NOP
+                / Copy the command-end pointer into 3R-5R
+                FIM 0P 3
+                JMS FPA
+                0R 1R 2R -> 3R 4R 5R
+                / Pop first_space into 0R-2R
+                JMS POP
+                0R -> 2R
+                JMS POP
+                0R -> 1R
+                JMS POP
+                / Do the call
+                CALL ECO
+                JUN SLB
 
             NCM, JMS PPA / Pop first_space from the stack
             SLB, NOP / "Standard loop back"
@@ -372,9 +224,9 @@ PKB, JMS RKB
                     JMS WRA
                 / "$ " prompt
                 FIM 0P '$'
-                JMS WCR
+                CALL WCR
                 FIM 0P '\s'
-                JMS WCR
+                CALL WCR
                 JUN PKB
         DEL, NOP
             / Push the command start pointer to the stack
@@ -392,22 +244,23 @@ PKB, JMS RKB
             0R -> 1R
             JMS POP
             / If they're equal, i.e. if we've already gone back all the way, ignore the delete and send '\a'
-            JMS C12
+            CALL C12
             LD 0R
-            JCN 0100B DDL
+            JCN 1100B SAL
+            JUN DDL
             / Send alert
-            FIM 0P '\a'
-            JMS WCR
+            SAL, FIM 0P '\a'
+            CALL WCR
             JUN PKB
             DDL, NOP / "Do delete"
             / Display the delete
             FIM 0P '\d'
-            JMS WCR
+            CALL WCR
             / Move the command counter back a character
             FIM 0P 3
             JMS FPA
-            JMS D12
-            JMS D12
+            CALL D12
+            CALL D12
             2R -> 4R
             1R -> 3R
             0R -> 2R
@@ -440,7 +293,7 @@ IEP, LDM EPB
     SRC 0P
     LDM AS3
     WRM
-    BBL 0
+    JUN RET
 
 / MLC(nibs: 12) -> addr: 12 - Allocate that many nibbles of memory
 MLC, NOP
@@ -474,7 +327,7 @@ MLC, NOP
     XCH 3R
     / Crash if there's an overflow
     JCN 1010B WEP
-    JUN DIE
+    JUN MOF
     / Write out the updated end pointer
     WEP, LDM EPB
     DCL
@@ -491,7 +344,7 @@ MLC, NOP
     LD 5R
     WRM
     / Return the old end pointer, which is still in 0R-2R
-    BBL 0
+    JUN RET
 
 / ================
 / STACK OPERATIONS
@@ -518,7 +371,7 @@ PSH, NOP
     ADD 14R
     XCH 14R
     JCN 1010B RPS / Crash if stack overflow
-    JUN DIE
+    JUN SOF
     RPS, BBL 0
 
 / PHA(val: 12) - Push a 12-bit address to the stack.
@@ -627,7 +480,7 @@ FPA, LDM 0
     RDM
     XCH 2R
     BBL 0
-    
+
 / BPK(n: 8) -> val: 4 - Peek at the top of the stack minus (n-1). Calling it with 0 is invalid.
 / For example, calling it with 1 will look at the top of the stack, and calling it with 2 will look at the second-to-top of the stack.
 / Does not clobber any registers except 0P (and 7P)
@@ -711,7 +564,7 @@ POP, NOP
     SUB 0R
     XCH 14R
     JCN 0010B DRD / Crash if stack underflow
-    JUN DIE
+    JUN SUF
     / Do the read; will always be in RAM bank 0
     DRD, LDM 0
     DCL
@@ -748,7 +601,7 @@ ECO, NOP
 
     / If first_space==cmd_end (i.e. if there are no arguments), then return
     6R -> 0R
-    JMS C12
+    CALL C12
     LD 0R
     JCN 0100B NRT
     JUN REO
@@ -770,7 +623,7 @@ ECO, NOP
             FIM 0P 3
             JMS BPA
             11R 12R 13R -> 3R 4R 5R
-            JMS C12
+            CALL C12
             LD 0R
             JCN 0100B PCC
             JUN REO
@@ -800,7 +653,7 @@ ECO, NOP
             RDM
             XCH 1R
             / Display the character
-            JMS WCR
+            CALL WCR
             / Increment the counter by a nibble
             LDM 1
             CLC
@@ -819,7 +672,7 @@ ECO, NOP
         JMS PPA
         / Display newline
         FIM 0P '\n'
-        JMS WCR
+        CALL WCR
         / Restore 11R-13R from the stack
         JMS POP
         0R -> 13R
@@ -827,7 +680,7 @@ ECO, NOP
         0R -> 12R
         JMS POP
         0R -> 11R
-        BBL 0
+        JUN RET
 
 / ACV(cmd_start: 12, cmd_end: 12) -> argc: 4, argv: 12
 ACV, NOP
@@ -852,7 +705,7 @@ ACV, NOP
 
     96 -> 0R 1R 2R
     / Save the address of argv to the stack and 0R-2R
-    JMS MLC
+    CALL MLC
     JMS PHA / 7 8 9
     FIM 0P 3
     JMS BPA
@@ -865,7 +718,7 @@ ACV, NOP
         SRC 3P
         LD 11R
         WRM
-        JMS I12
+        CALL I12
         / Middle 4 bits
         LD 0R
         DCL
@@ -873,7 +726,7 @@ ACV, NOP
         SRC 3P
         LD 12R
         WRM
-        JMS I12
+        CALL I12
         / Last 4 bits
         LD 0R
         DCL
@@ -881,7 +734,7 @@ ACV, NOP
         SRC 3P
         LD 13R
         WRM
-        JMS I12
+        CALL I12
 
     / Push argv counter (now argv[0].end) to the stack
     JMS PHA / 10 11 12
@@ -892,7 +745,7 @@ ACV, NOP
     / Copy the command reading counter into 0R-2R
     11R 12R 13R -> 0R 1R 2R
     / Set our counter to the address of the first space
-    JMS FSP
+    CALL FSP
     0R 1R 2R -> 11R 12R 13R
     / Put argv counter (now argv[0].end) into 0R-2R
     FIM 0P 3
@@ -905,7 +758,7 @@ ACV, NOP
         SRC 3P
         LD 11R
         WRM
-        JMS I12
+        CALL I12
         / Middle 4 bits
         LD 0R
         DCL
@@ -913,7 +766,7 @@ ACV, NOP
         SRC 3P
         LD 12R
         WRM
-        JMS I12
+        CALL I12
         / Last 4 bits
         LD 0R
         DCL
@@ -921,7 +774,7 @@ ACV, NOP
         SRC 3P
         LD 13R
         WRM
-        JMS I12
+        CALL I12
 
     / Restore 11R-13R
     FIM 0P 11
@@ -938,17 +791,19 @@ ACV, NOP
     FIM 0P 6
     JMS BPA
     0R 1R 2R -> 3R 4R 5R
-    / Put argc into 0R
+    / Put argc into 6R
     FIM 0P 7
     JMS BPK
+    0R -> 6R
     / Put argv into 1R-3R
     3R -> 1R
     4R -> 2R
     5R -> 3R
 
-    / Decrement the stack pointer by 7
-    LDM 7
+    / Decrement the stack pointer by 10
+    LDM 10
     XCH 15R
+    CLC
     SUB 15R
     XCH 15R
     CMC
@@ -965,7 +820,9 @@ ACV, NOP
     JMS POP
     0R -> 11R
 
-    RAV, BBL 0
+    / Put argc into 0R for returning
+    6R -> 0R
+    RAV, JUN RET
 
 
 
@@ -999,10 +856,10 @@ FSP, NOP
         / Load our counter into 3R-5R (second argument to C12)
         11R 12R 13R -> 3R 4R 5R
         / If our counter is equal to the command counter, we're done
-        JMS C12
+        CALL C12
         LD 0R
         JCN 0100B CKS
-        JUN RET
+        JUN RFS
         / Otherwise, check if the character is a space
             CKS, NOP
             / Load the character into 0P
@@ -1014,7 +871,7 @@ FSP, NOP
                 XCH 10R
                 / Put the counter plus a nibble in 1R-3R
                 11R 12R 13R -> 0R 1R 2R
-                JMS I12
+                CALL I12
                 2R -> 3R
                 1R -> 2R
                 0R -> 1R
@@ -1028,18 +885,20 @@ FSP, NOP
                 10R -> 0R
             / Now do the space check
                 FIM 1P '\s'
-                JMS CMP
+                CALL CMP
                 LD 0R
                 / If it's a space, we're done
-                JCN 1100B RET
+                JCN 0100B KPG
+                JUN RFS
         / Otherwise, keep going
+        KPG, NOP
         / Increment the counter by a character
             11R 12R 13R -> 0R 1R 2R
-            JMS I12
-            JMS I12
+            CALL I12
+            CALL I12
             0R 1R 2R -> 11R 12R 13R
         JUN SPL
-    RET, NOP
+    RFS, NOP
         / Remove cmd_end from the stack
         JMS PPA
         / Save the counter to 3R-5R
@@ -1056,7 +915,7 @@ FSP, NOP
         XCH 10R
         / Put the counter into 0R-2R and return it
         3R 4R 5R -> 0R 1R 2R
-        BBL 0
+        JUN RET
 
 
 / DTC(cmd_start: 12, first_space: 12) -> code: 8 - Detect command; returns 1 if echo, 0 otherwise
@@ -1090,7 +949,7 @@ DTC, NOP
     XCH 3R
     / Check if the result is 4
     4 -> 0R 1R 2R
-    JMS C12
+    CALL C12
     LD 0R
     JCN 1100B CKE
     JUN RTZ
@@ -1102,18 +961,22 @@ DTC, NOP
     RDM
     XCH 10R
     11R 12R 13R -> 0R 1R 2R
-    JMS I12
+    CALL I12
     0R 1R 2R -> 11R 12R 13R
+    LD 11R
+    DCL
     SRC 6P
     RDM
     XCH 1R
     10R -> 0R
     FIM 1P 'e'
-    JMS CMP
+    CALL CMP
     LD 0R
-    JCN 0100B RTZ
+    JCN 1100B CKO
+    JUN RTZ
+    CKO, NOP
     11R 12R 13R -> 0R 1R 2R
-    JMS I12
+    CALL I12
     0R 1R 2R -> 11R 12R 13R
 
     / Check 'o'
@@ -1123,18 +986,20 @@ DTC, NOP
     RDM
     XCH 10R
     11R 12R 13R -> 0R 1R 2R
-    JMS I12
+    CALL I12
     0R 1R 2R -> 11R 12R 13R
+    LD 11R
+    DCL
     SRC 6P
     RDM
     XCH 1R
     10R -> 0R
     FIM 1P 'o'
-    JMS CMP
+    CALL CMP
     LD 0R
     JCN 0100B RTZ
     11R 12R 13R -> 0R 1R 2R
-    JMS I12
+    CALL I12
     0R 1R 2R -> 11R 12R 13R
 
     1 -> 0R
@@ -1153,7 +1018,7 @@ DTC, NOP
         JMS POP
         0R -> 10R
         1R -> 0R
-        BBL 0
+        JUN RET
 
 
 / Increment a 12-bit number - I12(num: 12) -> plus_1: 12
@@ -1167,7 +1032,7 @@ I12, LDM 1
     TCC
     ADD 0R
     XCH 0R
-    BBL 0
+    JUN RET
 
 / Decrement a 12-bit number - D12(num: 12) -> minus_1: 12
 D12, CLC
@@ -1187,7 +1052,7 @@ D12, CLC
     LD 0R
     SUB 4R
     XCH 0R
-    BBL 0
+    JUN RET
 
 / Compare characters (8 bits) - CMP(char1: 8, char2: 8) -> same: 4
 CMP, LD 0R
@@ -1200,10 +1065,10 @@ CMP, LD 0R
     JCN 1100B NEQ
     EQ, LDM 1
     XCH 0R
-    BBL 0
+    JUN RET
     NEQ, LDM 0
     XCH 0R
-    BBL 0
+    JUN RET
 
 / Compare 12-bit numbers - C12(num1: 12, num2: 12) -> same: 4
 C12, LD 0R
@@ -1220,18 +1085,19 @@ C12, LD 0R
     JCN 1100B NE2
     EQ2, LDM 1
         XCH 0R
-        BBL 0
+        JUN RET
     NE2, LDM 0
         XCH 0R
-        BBL 0
+        JUN RET
 
 / Read from keyboard - RKB() -> char: 8
-RKB, FIM 1P 0
+RKB, NOP
+    0 -> 2R
     SRC 1P
     RDR
     XCH 0R
 
-    FIM 1P 1
+    1 -> 2R
     SRC 1P
     RDR
     XCH 1R
@@ -1241,1558 +1107,237 @@ RKB, FIM 1P 0
 / Write Char to monitor - WCR(char: 8)
 WCR, NOP
     / Write the character separator
-    FIM 1P 2
+    2 -> 2R
     SRC 1P
     LDM 8
     WRR
 
-    JMS WT / Wait for the monitor to receive it
+    CALL WT / Wait for the monitor to receive it
 
     / Write the actual character
-
     / Writing the first half of the character will clear the character separator bit, which is why it has to be done last
 
     / Write the second half of the character
-    FIM 1P 3
+    3 -> 2R
     SRC 1P
     LD 1R
     WRR
     / Write the first half of the character
-    FIM 1P 2
+    2 -> 2R
     SRC 1P
     LD 0R
     WRR
 
-    JMS WT / Wait for the monitor to receive it
+    CALL WT / Wait for the monitor to receive it
 
-    BBL 0
+    JUN RET
 
-DIE, NOP
-    / Since the 4004 doesn't have a HLT instruction, we'll just print "RIP" and then loop forever
-    FIM 0P 'R'
-    JMS WCR
-    FIM 0P 'I'
-    JMS WCR
-    FIM 0P 'P'
-    JMS WCR
+
+RET, NOP
+    / Save 0R to the stack. We'll use 0R, 8R, and 9R for all operations within RET.
+    JMS PSH
+
+    / Set write enable
+    14 -> 8R
+    SRC 4P
+    LDM 1
+    WRR
+    / Send high 4 bits of program RAM address
+    15 -> 8R
+    SRC 4P
+    *+144 -> 8R _ _
+    LD 8R
+    WRR
+    / Send low 8 bits of program RAM address
+    *+140 -> _ 8R 9R
+    SRC 4P
+
+    / Write the JUN opcode
+    LDM 0100B
+    WPM
+    / Write the first nibble of the address to jump to, into program memory
+        / Get the first nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 4
+            4 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the first nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 4
+            LDM 4
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+106 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+102 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Write the second nibble of the address to jump to, into program memory
+        / Get the second nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 3
+            3 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the second nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 3
+            LDM 3
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+69 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+65 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Write the third nibble of the address to jump to, into program memory
+        / Get the third nibble of the address to jump to, from the stack into 0R
+            / Decrement the stack pointer by 2
+            2 -> 8R
+            LD 15R
+            CLC
+            SUB 8R
+            XCH 15R
+            CMC
+            0 -> 8R
+            LD 14R
+            SUB 8R
+            XCH 14R
+            / Put the third nibble of the address to jump to into 0R
+            LDM 0
+            DCL
+            SRC 7P
+            RDM
+            XCH 0R
+            / Restore the stack pointer by incrementing it by 2
+            LDM 2
+            CLC
+            ADD 15R
+            XCH 15R
+            TCC
+            ADD 14R
+            XCH 14R
+        / Send high 4 bits of program RAM address
+        15 -> 8R
+        SRC 4P
+        *+31 -> 8R _ _
+        LD 8R
+        WRR
+        / Send low 8 bits of program RAM address
+        *+27 -> _ 8R 9R
+        SRC 4P
+        / Do the program memory write
+        LD 0R
+        WPM
+
+    / Clear write enable
+    14 -> 8R
+    SRC 4P
+    LDM 0
+    WRR
+
+    / Restore 0R
+    JMS POP
+    / Decrement the stack pointer by 3 to pop off the address to jump to
+    3 -> 8R
+    LD 15R
+    CLC
+    SUB 8R
+    XCH 15R
+    CMC
+    0 -> 8R
+    LD 14R
+    SUB 8R
+    XCH 14R
+
+    / NOPs will be replaced with JUN instruction
+    NOP
+    NOP
+
+
+SUF, NOP
+    FIM 0P 'S'
+    CALL WCR
+    FIM 0P 'U'
+    CALL WCR
+    FIM 0P 'F'
+    CALL WCR
     END, JUN END
 
-/ Wait. Does not clobber argument registers. MAYBE - WT()
+SOF, NOP
+    FIM 0P 'S'
+    CALL WCR
+    FIM 0P 'O'
+    CALL WCR
+    FIM 0P 'F'
+    CALL WCR
+    END, JUN END
+
+MOF, NOP
+    FIM 0P 'M'
+    CALL WCR
+    FIM 0P 'O'
+    CALL WCR
+    FIM 0P 'F'
+    CALL WCR
+    END, JUN END
+
+/ Wait. Does not clobber argument registers. - WT()
 WT, NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
-    NOP
+    FIM 4P 140
+    IMC, LDM 1
+        CLC
+        ADD 9R
+        XCH 9R
+        TCC
+        ADD 8R
+        XCH 8R
+        LD 8R
+        JCN 1100B IMC
 ZZ, NOP
-    BBL 0
+    JUN RET
