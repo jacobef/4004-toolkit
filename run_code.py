@@ -1,6 +1,8 @@
 from textwrap import wrap
 from time import sleep, time
 
+import jsonpickle
+
 from disassemble import disas_instr
 from log import debug_log
 from parse_instruction import *
@@ -13,7 +15,7 @@ def load_machine_code(cpu: Intel4004, code: bytearray):
     cpu.memory.program_ram[:len(code_str)] = [bit for byt in [string_to_binary(byte_str) for byte_str in wrap(code_str, 8)] for bit in byt]
 
 
-def single_step(cpu: Intel4004, quiet: bool = False):
+def single_step(cpu: Intel4004, values_to_labels: dict[int, str], quiet: bool = False):
     # start_time = time()
     # while time() < start_time + 0.001:
     #     pass
@@ -69,6 +71,9 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.accumulator = [not bit for bit in cpu.accumulator]
     elif instruction == JUN:
         cpu.prgm_cntr = args[0]
+        addr_int = binary_to_int(args[0])
+        if addr_int in values_to_labels:
+            debug_log(f"[CPU] Jumping to {values_to_labels[addr_int]}")
     elif instruction == JCN:
         inverted, check_acc_zero, check_carry, check_test = args[0]
 
@@ -154,7 +159,6 @@ def single_step(cpu: Intel4004, quiet: bool = False):
         cpu.accumulator = [line.status for line in port.lines]
         if port_n == 0 and cpu.index_regs[10] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
             debug_log(f"[CPU] Received character separator")
-
     elif instruction == ADM:
         added = add_binary(cpu.accumulator, cpu.memory.get_data_ram_char(), cpu.carry_bit)
         cpu.accumulator = added.lower_bits
@@ -199,5 +203,9 @@ def single_step(cpu: Intel4004, quiet: bool = False):
 
 
 def turn_on(cpu: Intel4004):
+    debug_file = open("debug.json", "r")
+    labels_to_values: dict[str, int] = jsonpickle.loads(debug_file.read())
+    debug_log(str(labels_to_values))
+    values_to_labels: dict[int, str] = {v: k for k, v in labels_to_values.items()}
     while True:
-        single_step(cpu, quiet=True)
+        single_step(cpu, values_to_labels, quiet=True)

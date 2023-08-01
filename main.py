@@ -1,14 +1,14 @@
 import os
-from typing import Callable
+from typing import Callable, Any
 
 from assemble import assemble, GivenArgType
-from devices import Keyboard, Monitor, BetterMonitor, BetterMonitorTester
+from devices import Monitor, Keyboard
 from run_code import *
 from disassemble import disassemble
 from cpu import *
 from colorama import Fore, Back, Style
 from threading import Thread
-from getkey import getkey
+import curses
 
 
 def setup_ports():
@@ -16,12 +16,12 @@ def setup_ports():
     ports = [
         [I, I, I, I],  # upper 4 bits of character input from keyboard
         [I, I, I, I],  # lower 4 bits of character input from keyboard
+        [I, I, I, I],  # "char ready" input from keyboard
+        [O, O, O, O],  # "done receiving" output to keyboard
         [O, O, O, O],  # upper 4 bits of character output to monitor
         [O, O, O, O],  # lower 4 bits of character output to monitor
-        [I, I, I, I],
-        [I, I, I, I],
-        [I, I, I, I],
-        [I, I, I, I],
+        [O, O, O, O],  # "char ready" output to monitor
+        [I, I, I, I],  # "done displaying" input from monitor
         [O, O, O, O],
         [O, O, O, O],
         [O, O, O, O],
@@ -36,29 +36,56 @@ def setup_ports():
 
 
 def main():
+    stdscr = curses.initscr()
+    curses.cbreak()
+
     machine_code = assemble("main")
     f = open("main.4004out", "wb")
     f.write(machine_code)
     f.close()
     cpu = Intel4004(setup_ports())
 
-    keyboard = Keyboard(write_to=(cpu.memory.rom_ports[0], cpu.memory.rom_ports[1]))
+    keyboard = Keyboard(char_lines=(*(cpu.memory.rom_ports[0].lines[1:]), *(cpu.memory.rom_ports[1].lines)),
+                        char_ready_line=cpu.memory.rom_ports[2].lines[3],
+                        done_receiving_line=cpu.memory.rom_ports[3].lines[3])
 
-    monitor = Monitor(read_from=(cpu.memory.rom_ports[2], cpu.memory.rom_ports[3]))
-    monitor_thread = Thread(target=monitor.turn_on)
-    monitor_thread.start()
-    print("Warming up the monitor... (yes really)")
-    sleep(0.3)
+    monitor = Monitor(char_lines=(*(cpu.memory.rom_ports[4].lines[1:]), *(cpu.memory.rom_ports[5].lines)),
+                      char_ready_line=cpu.memory.rom_ports[6].lines[3],
+                      done_displaying_line=cpu.memory.rom_ports[7].lines[3])
+    start_thread(monitor.turn_on)
 
     load_machine_code(cpu, machine_code)
-    cpu_thread = Thread(target=lambda: turn_on(cpu))
-    cpu_thread.start()
+    start_thread(lambda: turn_on(cpu))
 
     queue = []
-    Thread(target=lambda: queue_to_kb(queue, keyboard)).start()
-    while True:
-        inp = getkey()
-        queue.insert(0, inp)
+    start_thread(lambda: queue_to_kb(queue, keyboard))
+
+    def keys_to_queue():
+        while True:
+            key = chr(stdscr.getch())
+            if key:
+                queue.insert(0, key)
+    run_with_cleanup(keys_to_queue)
+
+
+def start_thread(fn: Callable[[], Any]):
+    Thread(target=lambda: run_with_cleanup(fn)).start()
+
+
+def run_with_cleanup(fn: Callable[[], Any]):
+    try:
+        fn()
+    except Exception as e:
+        debug_log(f"[MAIN] Caught exception")
+        curses.echo()
+        curses.nocbreak()
+        curses.endwin()
+        raise e
+    finally:
+        debug_log(f"[MAIN] Caught exception")
+        curses.echo()
+        curses.nocbreak()
+        curses.endwin()
 
 
 def queue_to_kb(queue: list[str], kb: Keyboard):

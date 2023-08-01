@@ -1,6 +1,8 @@
 import re
 from textwrap import wrap
 
+import jsonpickle
+
 from instructions import *
 from binary_utils import *
 from string import ascii_lowercase
@@ -250,44 +252,16 @@ def assemble(filename: str) -> bytearray:
     for line in code_cleaned:
         if len(line.split(" ")) == 2 and line.split(" ")[0] == "CALL":
             for line2 in f"""
-LDM 0
-DCL
+
 / Push the first nibble of the return address
-*+38 -> 8R _ _
-SRC 7P
-LD 8R
-WRM
-LDM 1
-CLC
-ADD 15R
-XCH 15R
-TCC
-ADD 14R
-XCH 14R
+*+14 -> 8R _ _
+JMS P8R
 / Push the second nibble
-*+26 -> _ 8R _
-SRC 7P
-LD 8R
-WRM
-LDM 1
-CLC
-ADD 15R
-XCH 15R
-TCC
-ADD 14R
-XCH 14R
+*+10 -> _ 8R _
+JMS P8R
 / Push the third nibble
-*+14 -> _ _ 8R
-SRC 7P
-LD 8R
-WRM
-LDM 1
-CLC
-ADD 15R
-XCH 15R
-TCC
-ADD 14R
-XCH 14R
+*+6 -> _ _ 8R
+JMS P8R
 / Jump to the function
 JUN {line.split(" ")[1]}
 """.split("\n"):
@@ -297,6 +271,10 @@ JUN {line.split(" ")[1]}
             code_calls_expanded.append(line)
 
     labels_to_values = get_labels_to_values(code_calls_expanded)
+    debug_file = open("debug.json", "w")
+    debug_file.write(jsonpickle.dumps(labels_to_values))
+    debug_file.close()
+
     debug_log(f"[ASSEMBLER] address labels: {labels_to_values}")
     out = ""
 

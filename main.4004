@@ -1,6 +1,3 @@
-/ =================
-/ =====VERSION=====
-/ =================
 / CALLING CONVENTION:
 / Functions accept arguments from, and return to, 0-7R. If they don't fit, you can spill into the stack.
     / For example, imagine the function with the signature FN(12, 4, 8) -> 8. In this example:
@@ -9,44 +6,6 @@
     / The third argument should be spread across 4R and 5R.
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
-0
 
 / Set the stack counter to 0
 FIM 7P 0
@@ -54,7 +13,7 @@ FIM 7P 0
 / Initialize malloc
 CALL IEP
 
-/ Allocate 128 nibbles (64 characters) for the command
+/ Allocate 128 nibbles (64 characters) for the command on the heap
 128 -> 0R 1R 2R
 CALL MLC
 0R 1R 2R -> 3R 4R 5R
@@ -73,203 +32,194 @@ JMS PSH / 4
 5R -> 0R
 JMS PSH / 5
 
+/ Set monitor_char_ready_cache to false
+0 -> 0R
+JMS PSH / 6
+/ Set monitor_done_displaying_cache to false
+0 -> 0R
+JMS PSH / 7
+/ Set kb_char_ready_cache to false
+0 -> 0R
+JMS PSH / 8
+/ Set kb_done_displaying_cache to false
+0 -> 0R
+JMS PSH / 9
+
 / Write "$ " to the monitor
 FIM 0P '$'
-CALL WCR
+CALL WCH
 FIM 0P '\s'
-CALL WCR
+CALL WCH
 
 / Keyboard polling loop
-/ Set expecting_char to 0 (false)
-0 -> 10R
 PKB, NOP
-    JMS RKB
-    / This will borrow if the high bit of the character is set (indicating the character separator)
-    LDM 0111B
-    CLC
-    SUB 0R
-    / Jump to the separator-handling code if there was a borrow
-    JCN 0010B CHR 
-    JUN SEP
-    CHR, NOP
-        / If expecting_char is 0 (false), ignore the received character
-        LD 10R
-        JCN 1100B ECR
+    CALL RKB
+    / Save 0P (the received character) in 6P
+    0P -> 6P
+    / Check if the character is DEL
+    FIM 1P '\d'
+    CALL CMP
+    LD 0R
+    JCN 0100B DWT
+    JUN DEL
+    / Write the character to the monitor
+    DWT, NOP
+    6P -> 0P
+    CALL WCH
+    / Check if the character is enter
+    6P -> 0P
+    FIM 1P '\n'
+    CALL CMP
+    LD 0R
+    JCN 0100B NRM
+    JUN ENT
+
+    NRM, NOP
+        / Put the command-end pointer in 0R-2R
+        FIM 0P 3
+        JMS FPA
+
+        / Write the character to memory
+        / First 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 2P
+        SRC 2P
+        LD 12R
+        WRM
+
+        / Increment the cached command-end pointer
+        CALL I12
+
+        / Second 4 bits
+        LD 0R
+        DCL
+        1R 2R -> 2P
+        SRC 2P
+        LD 13R
+        WRM
+
+        / Increment the cached command-end pointer
+        CALL I12
+
+        / Write the incremented command-end pointer back to the stack
+        2R -> 4R
+        1R -> 3R
+        0R -> 2R
+        FIM 0P 3
+        JMS WRA
+
         JUN PKB
-        / Otherwise:
-        ECR, NOP
-        / Set expecting_char to 0 (false)
-        0 -> 10R
-        / Save 0P (the received character) in 6P
-        0P -> 6P
-        / Check if the character is DEL
-        FIM 1P '\d'
-        CALL CMP
-        LD 0R
-        JCN 0100B DWT
-        JUN DEL
-        / Write the character to the monitor
-        DWT, NOP
-        6P -> 0P
-        CALL WCR
-        / Check if the character is enter
-        6P -> 0P
-        FIM 1P '\n'
-        CALL CMP
-        LD 0R
-        JCN 0100B NRM
-        JUN ENT
 
-        NRM, NOP
-            / Put the command-end pointer in 0R-2R
-            FIM 0P 3
-            JMS FPA
-
-            / Write the character to memory
-            / First 4 bits
-            LD 0R
-            DCL
-            1R 2R -> 2P
-            SRC 2P
-            LD 12R
-            WRM
-
-            / Increment the cached command-end pointer
-            CALL I12
-
-            / Second 4 bits
-            LD 0R
-            DCL
-            1R 2R -> 2P
-            SRC 2P
-            LD 13R
-            WRM
-
-            / Increment the cached command-end pointer
-            CALL I12
-
-            / Write the incremented command-end pointer back to the stack
-            2R -> 4R
-            1R -> 3R
-            0R -> 2R
-            FIM 0P 3
-            JMS WRA
-
-            JUN PKB
-
-        ENT, NOP
-            / Call FSP
-                / Get the command start address and save it to the stack
-                FIM 0P 0
-                JMS FPA
-                JMS PHA
-                / Get the command end address and save it to 3R-5R
-                FIM 0P 3
-                JMS FPA
-                0R 1R 2R -> 3R 4R 5R
-                / Put the command start address in 0R-2R
-                JMS PPA
-                / Do the call and push the result to the stack
-                CALL FSP
-                JMS PHA
-            / Call DTC
-                / Load cmd_start into 6R-8R
-                FIM 0P 0
-                JMS FPA
-                0R 1R 2R -> 6R 7R 8R
-                / Load first_space into 3R-5R
-                FIM 0P 3
-                JMS BPK
-                0R -> 3R
-                FIM 0P 2
-                JMS BPK
-                0R -> 4R
-                FIM 0P 1
-                JMS BPK
-                0R -> 5R
-                / cmd_start back to 0R-2R
-                6R 7R 8R -> 0R 1R 2R
-                / Get the command code; if it's 0, the command wasn't recognized
-                CALL DTC
-                LD 0R
-                JCN 1100B CEO
-                JUN NCM
-            / Call echo
-                CEO, NOP
-                / Copy the command-end pointer into 3R-5R
-                FIM 0P 3
-                JMS FPA
-                0R 1R 2R -> 3R 4R 5R
-                / Pop first_space into 0R-2R
-                JMS POP
-                0R -> 2R
-                JMS POP
-                0R -> 1R
-                JMS POP
-                / Do the call
-                CALL ECO
-                JUN SLB
-
-            NCM, JMS PPA / Pop first_space from the stack
-            SLB, NOP / "Standard loop back"
-                / Reset the command-end pointer to the start of the command
-                    / Put the command start address in 2R-4R
-                    FIM 0P 0
-                    JMS FPA
-                    2R -> 4R
-                    1R -> 3R
-                    0R -> 2R
-                    / Set the command-end pointer to it
-                    FIM 0P 3
-                    JMS WRA
-                / "$ " prompt
-                FIM 0P '$'
-                CALL WCR
-                FIM 0P '\s'
-                CALL WCR
-                JUN PKB
-        DEL, NOP
-            / Push the command start pointer to the stack
+    ENT, NOP
+        / Call FSP
+            / Get the command start address and save it to the stack
             FIM 0P 0
             JMS FPA
             JMS PHA
+            / Get the command end address and save it to 3R-5R
+            FIM 0P 3
+            JMS FPA
+            0R 1R 2R -> 3R 4R 5R
+            / Put the command start address in 0R-2R
+            JMS PPA
+            / Do the call and push the result to the stack
+            CALL FSP
+            JMS PHA
+        / Call DTC
+            / Load cmd_start into 6R-8R
+            FIM 0P 0
+            JMS FPA
+            0R 1R 2R -> 6R 7R 8R
+            / Load first_space into 3R-5R
+            FIM 0P 3
+            JMS BPK
+            0R -> 3R
+            FIM 0P 2
+            JMS BPK
+            0R -> 4R
+            FIM 0P 1
+            JMS BPK
+            0R -> 5R
+            / cmd_start back to 0R-2R
+            6R 7R 8R -> 0R 1R 2R
+            / Get the command code; if it's 0, the command wasn't recognized
+            CALL DTC
+            LD 0R
+            JCN 1100B CEO
+            JUN NCM
+        / Call echo
+            CEO, NOP
             / Copy the command-end pointer into 3R-5R
             FIM 0P 3
             JMS FPA
             0R 1R 2R -> 3R 4R 5R
-            / Copy the command start pointer into 0R-2R
+            / Pop first_space into 0R-2R
             JMS POP
             0R -> 2R
             JMS POP
             0R -> 1R
             JMS POP
-            / If they're equal, i.e. if we've already gone back all the way, ignore the delete and send '\a'
-            CALL C12
-            LD 0R
-            JCN 1100B SAL
-            JUN DDL
-            / Send alert
-            SAL, FIM 0P '\a'
-            CALL WCR
-            JUN PKB
-            DDL, NOP / "Do delete"
-            / Display the delete
-            FIM 0P '\d'
-            CALL WCR
-            / Move the command counter back a character
-            FIM 0P 3
-            JMS FPA
-            CALL D12
-            CALL D12
-            2R -> 4R
-            1R -> 3R
-            0R -> 2R
-            FIM 0P 3
-            JMS WRA
-            JUN PKB
+            / Do the call
+            CALL ECO
+            JUN SLB
 
-    SEP, NOP
-        1 -> 10R / Set expecting_char to 1 (true)
+        NCM, JMS PPA / Pop first_space from the stack
+        SLB, NOP / "Standard loop back"
+            / Reset the command-end pointer to the start of the command
+                / Put the command start address in 2R-4R
+                FIM 0P 0
+                JMS FPA
+                2R -> 4R
+                1R -> 3R
+                0R -> 2R
+                / Set the command-end pointer to it
+                FIM 0P 3
+                JMS WRA
+            / "$ " prompt
+            FIM 0P '$'
+            CALL WCH
+            FIM 0P '\s'
+            CALL WCH
+            JUN PKB
+    DEL, NOP
+        / Push the command start pointer to the stack
+        FIM 0P 0
+        JMS FPA
+        JMS PHA
+        / Copy the command-end pointer into 3R-5R
+        FIM 0P 3
+        JMS FPA
+        0R 1R 2R -> 3R 4R 5R
+        / Copy the command start pointer into 0R-2R
+        JMS POP
+        0R -> 2R
+        JMS POP
+        0R -> 1R
+        JMS POP
+        / If they're equal, i.e. if we've already gone back all the way, ignore the delete and send '\a'
+        CALL C12
+        LD 0R
+        JCN 1100B SAL
+        JUN DDL
+        / Send alert
+        SAL, FIM 0P '\a'
+        CALL WCH
+        JUN PKB
+        DDL, NOP / "Do delete"
+        / Display the delete
+        FIM 0P '\d'
+        CALL WCH
+        / Move the command counter back a character
+        FIM 0P 3
+        JMS FPA
+        CALL D12
+        CALL D12
+        2R -> 4R
+        1R -> 3R
+        0R -> 2R
+        FIM 0P 3
+        JMS WRA
         JUN PKB
 
 EPB = 1 / Malloc end pointer bank
@@ -373,6 +323,30 @@ PSH, NOP
     JCN 1010B RPS / Crash if stack overflow
     JUN SOF
     RPS, BBL 0
+
+/ P8R(val: 4) - Like PSH, but takes the argument from 8R.
+/ Only used for the CALL macro.
+P8R, NOP
+    / Select RAM bank 0
+    LDM 0
+    DCL
+    / Use the stack counter as the address
+    SRC 7P
+    / Write the argument to the selected address
+    LD 8R
+    WRM
+    / Increment the stack counter
+    LD 15R
+    LDM 1
+    CLC
+    ADD 15R
+    XCH 15R
+    TCC
+    ADD 14R
+    XCH 14R
+    JCN 1010B RP8 / Crash if stack overflow
+    JUN SOF
+    RP8, BBL 0
 
 / PHA(val: 12) - Push a 12-bit address to the stack.
 / Does not clobber any registers except 0R-2R (and 7P)
@@ -653,7 +627,7 @@ ECO, NOP
             RDM
             XCH 1R
             / Display the character
-            CALL WCR
+            CALL WCH
             / Increment the counter by a nibble
             LDM 1
             CLC
@@ -672,7 +646,7 @@ ECO, NOP
         JMS PPA
         / Display newline
         FIM 0P '\n'
-        CALL WCR
+        CALL WCH
         / Restore 11R-13R from the stack
         JMS POP
         0R -> 13R
@@ -776,6 +750,64 @@ ACV, NOP
         WRM
         CALL I12
 
+    / Copy cmd_end into 3R-5R
+    FIM 0P 10
+    JMS BPA
+    0R 1R 2R -> 3R 4R 5R
+    / Copy the command reading counter into 0R-2R
+    11R 12R 13R -> 0R 1R 2R
+    / Put the address of the first non-space on the stack
+    CALL FNS
+    JMS PHA
+    / Copy it to 3R-5R (second arg to C12)
+    FIM 0P 3
+    JMS BPA
+    0R 1R 2R -> 3R 4R 5R
+
+    / Copy cmd_end into 0R-2R (first arg to C12)
+    FIM 0P 13
+    JMS BPA
+    / Check if we've reached the end
+    CALL C12
+    JCN 1100B RAV
+
+    / Pop the first non-space address into our command reading counter
+    JMS PPA
+    0R 1R 2R -> 11R 12R 13R
+    / Copy cmd_end into 3R-5R
+    FIM 0P 10
+    JMS BPA
+
+    / THIS SECTION IS VERY UNFINISHED!!!!
+
+    / Write the address of the non-space to argv[1].start
+        / First 4 bits
+/        LD 0R
+/        DCL
+/        1R 2R -> 3P
+/        SRC 3P
+/        LD 11R
+/        WRM
+/        CALL I12
+        / Middle 4 bits
+/        LD 0R
+/        DCL
+/        1R 2R -> 3P
+/        SRC 3P
+/        LD 12R
+/        WRM
+/        CALL I12
+/        / Last 4 bits
+/        LD 0R
+/        DCL
+/        1R 2R -> 3P
+/        SRC 3P
+/        LD 13R
+/        WRM
+/        CALL I12
+
+
+    RAV, NOP
     / Restore 11R-13R
     FIM 0P 11
     JMS BPK
@@ -822,8 +854,99 @@ ACV, NOP
 
     / Put argc into 0R for returning
     6R -> 0R
-    RAV, JUN RET
+    JUN RET
 
+
+
+/ FNS(cmd_start: 12, cmd_end: 12) -> space_addr: 12 - Find the first non-space.
+/ Returns the address of the first non-space, or the command-end pointer if there are no spaces.
+FNS, NOP
+    / Save 0R
+    0R -> 6R
+    / Save 10R-13R to the stack
+    10R -> 0R
+    JMS PSH
+    11R -> 0R
+    JMS PSH
+    12R -> 0R
+    JMS PSH
+    13R -> 0R
+    JMS PSH
+
+    / Set our counter (11R-13R) to cmd_start. This will represent the address of the character we're looking at.
+    6R 1R 2R -> 11R 12R 13R
+
+    / Save cmd_end to the stack
+    3R 4R 5R -> 0R 1R 2R
+    JMS PHA
+
+    NSL, NOP
+        / Load the command-end pointer into 0R-2R (first argument to C12)
+        FIM 0P 3
+        JMS BPA
+        / Load our counter into 3R-5R (second argument to C12)
+        11R 12R 13R -> 3R 4R 5R
+        / If our counter is equal to the command counter, we're done
+        CALL C12
+        LD 0R
+        JCN 0100B CKN
+        JUN RFS
+        / Otherwise, check if the character is a space
+            CKN, NOP
+            / Load the character into 0P
+                / Save first 4 bits into 10R
+                LD 11R
+                DCL
+                SRC 6P
+                RDM
+                XCH 10R
+                / Put the counter plus a nibble in 1R-3R
+                11R 12R 13R -> 0R 1R 2R
+                CALL I12
+                2R -> 3R
+                1R -> 2R
+                0R -> 1R
+                / Save second 4 bits into 1R
+                LD 1R
+                DCL
+                SRC 1P
+                RDM
+                XCH 1R
+                / Put first 4 bits into 0R
+                10R -> 0R
+            / Now do the space check
+                FIM 1P '\s'
+                CALL CMP
+                LD 0R
+                / If it's a space, we're done
+                JCN 1100B KG2
+                JUN RFN
+        / Otherwise, keep going
+        KG2, NOP
+        / Increment the counter by a character
+            11R 12R 13R -> 0R 1R 2R
+            CALL I12
+            CALL I12
+            0R 1R 2R -> 11R 12R 13R
+        JUN NSL
+    RFN, NOP
+        / Remove cmd_end from the stack
+        JMS PPA
+        / Save the counter to 3R-5R
+        / This won't be clobbered because POP doesn't clobber anything (except 7P and 0R)
+        11R 12R 13R -> 3R 4R 5R
+        / Restore 11R-13R from the stack
+        JMS POP
+        XCH 13R
+        JMS POP
+        XCH 12R
+        JMS POP
+        XCH 11R
+        JMS POP
+        XCH 10R
+        / Put the counter into 0R-2R and return it
+        3R 4R 5R -> 0R 1R 2R
+        JUN RET
 
 
 
@@ -1092,43 +1215,108 @@ C12, LD 0R
 
 / Read from keyboard - RKB() -> char: 8
 RKB, NOP
-    0 -> 2R
-    SRC 1P
-    RDR
-    XCH 0R
-
-    1 -> 2R
-    SRC 1P
-    RDR
-    XCH 1R
-
-    BBL 0
-
-/ Write Char to monitor - WCR(char: 8)
-WCR, NOP
-    / Write the character separator
-    2 -> 2R
-    SRC 1P
-    LDM 8
-    WRR
-
-    CALL WT / Wait for the monitor to receive it
-
-    / Write the actual character
-    / Writing the first half of the character will clear the character separator bit, which is why it has to be done last
-
-    / Write the second half of the character
+    / Flip kb_done_receiving_cache
+    FIM 0P 9
+    JMS FPK
+    LD 0R
+    RAR
+    CMC
+    RAL
+    XCH 2R
+    FIM 0P 9
+    JMS WTS
+    / Flip kb_done_receiving
+    FIM 0P 9
+    JMS FPK
     3 -> 2R
-    SRC 1P
-    LD 1R
-    WRR
-    / Write the first half of the character
-    2 -> 2R
     SRC 1P
     LD 0R
     WRR
 
-    CALL WT / Wait for the monitor to receive it
+    / Read kb_char_ready_cache into 0R
+    FIM 0P 8
+    JMS FPK
+    / Wait for kb_char_ready to flip
+    WCR, NOP
+        / Read kb_char_ready
+        2 -> 2R
+        SRC 1P
+        RDR
+        / Compare it to kb_char_ready_cache
+        CLC
+        SUB 0R
+        JCN 0100B WCR
+    / Update kb_char_ready_cache
+        / Read kb_char_ready into 2R
+        2 -> 2R
+        SRC 1P
+        RDR
+        XCH 2R
+        / Write it to the cache
+        FIM 0P 8
+        JMS WTS
+
+    / Return the character sent by the keyboard
+    0 -> 2R
+    SRC 1P
+    RDR
+    XCH 0R
+    1 -> 2R
+    SRC 1P
+    RDR
+    XCH 1R
+    JUN RET
+
+/ Write Char to monitor - WCH(char: 8)
+WCH, NOP
+    / Set the character lines
+    4 -> 2R
+    SRC 1P
+    LD 0R
+    WRR
+    5 -> 2R
+    SRC 1P
+    LD 1R
+    WRR
+    / Flip monitor_char_ready_cache
+    FIM 0P 6
+    JMS FPK
+    LD 0R
+    RAR
+    CMC
+    RAL
+    XCH 2R
+    FIM 0P 6
+    JMS WTS
+    / Load monitor_char_ready_cache into 0R and flip monitor_ready
+    FIM 0P 6
+    JMS FPK
+    6 -> 2R
+    SRC 1P
+    LD 0R
+    WRR
+    / Read monitor_done_displaying_cache into 0R
+    FIM 0P 7
+    JMS FPK
+    / Wait for monitor_done_displaying to flip
+    WDD, NOP
+        / Read monitor_done_displaying
+        7 -> 2R
+        SRC 1P
+        RDR
+        / Compare it to monitor_done_displaying_cache
+        CLC
+        SUB 0R
+        JCN 0100B WDD
+    / Update monitor_done_displaying_cache
+        / Read monitor_done_displaying into 2R
+        7 -> 2R
+        SRC 1P
+        RDR
+        XCH 2R
+        / Write it to the cache
+        FIM 0P 7
+        JMS WTS
 
     JUN RET
 
@@ -1302,42 +1490,30 @@ RET, NOP
 
 SUF, NOP
     FIM 0P 'S'
-    CALL WCR
+    CALL WCH
     FIM 0P 'U'
-    CALL WCR
+    CALL WCH
     FIM 0P 'F'
-    CALL WCR
-    END, JUN END
+    CALL WCH
+    JUN FRZ
 
 SOF, NOP
     FIM 0P 'S'
-    CALL WCR
+    CALL WCH
     FIM 0P 'O'
-    CALL WCR
+    CALL WCH
     FIM 0P 'F'
-    CALL WCR
-    END, JUN END
+    CALL WCH
+    JUN FRZ
 
 MOF, NOP
     FIM 0P 'M'
-    CALL WCR
+    CALL WCH
     FIM 0P 'O'
-    CALL WCR
+    CALL WCH
     FIM 0P 'F'
-    CALL WCR
-    END, JUN END
+    CALL WCH
+    JUN FRZ
 
-/ Wait. Does not clobber argument registers. - WT()
-WT, NOP
-    FIM 4P 140
-    IMC, LDM 1
-        CLC
-        ADD 9R
-        XCH 9R
-        TCC
-        ADD 8R
-        XCH 8R
-        LD 8R
-        JCN 1100B IMC
-ZZ, NOP
-    JUN RET
+FRZ, JUN FRZ
+ZZZ, NOP
