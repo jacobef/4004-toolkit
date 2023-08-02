@@ -15,7 +15,7 @@ def load_machine_code(cpu: Intel4004, code: bytearray):
     cpu.memory.program_ram[:len(code_str)] = [bit for byt in [string_to_binary(byte_str) for byte_str in wrap(code_str, 8)] for bit in byt]
 
 
-def single_step(cpu: Intel4004, values_to_labels: dict[int, str], quiet: bool = False):
+def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, quiet: bool = False):
     # start_time = time()
     # while time() < start_time + 0.001:
     #     pass
@@ -72,7 +72,7 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str], quiet: bool = 
     elif instruction == JUN:
         cpu.prgm_cntr = args[0]
         addr_int = binary_to_int(args[0])
-        if addr_int in values_to_labels:
+        if values_to_labels and addr_int in values_to_labels:
             debug_log(f"[CPU] Jumping to {values_to_labels[addr_int]}")
     elif instruction == JCN:
         inverted, check_acc_zero, check_carry, check_test = args[0]

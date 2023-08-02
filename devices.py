@@ -1,4 +1,6 @@
 from multiprocessing.connection import Client
+from time import sleep
+
 from cpu import IOLine, InputOrOutput
 from binary_utils import int_to_binary, binary_to_int
 
@@ -22,6 +24,7 @@ class Monitor:
 
     def turn_on(self):
         while True:
+            sleep(0.01)
             debug_log("[MONITOR] Waiting for char_ready")
             while self.char_ready_line.status == self.char_ready_line_cache:
                 pass
