@@ -6,6 +6,15 @@
     / The third argument should be spread across 4R and 5R.
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
+0
+0
+0
+0
+0
+0
+0
+0
+0
 
 / Set the stack counter to 0
 FIM 7P 0
@@ -164,7 +173,36 @@ PKB, NOP
             CALL ECO
             JUN SLB
 
-        NCM, JMS PPA / Pop first_space from the stack
+        NCM, NOP
+        FIM 0P 'n'
+        CALL WCH
+        FIM 0P 'f'
+        CALL WCH
+        FIM 0P ':'
+        CALL WCH
+        FIM 0P '\s'
+        CALL WCH
+        / Print the command
+            / Load cmd_start into 6R-8R
+            FIM 0P 0
+            JMS FPA
+            0R 1R 2R -> 6R 7R 8R
+            / Load first_space into 3R-5R
+            FIM 0P 3
+            JMS BPK
+            0R -> 3R
+            FIM 0P 2
+            JMS BPK
+            0R -> 4R
+            FIM 0P 1
+            JMS BPK
+            0R -> 5R
+            / cmd_start back to 0R-2R
+            6R 7R 8R -> 0R 1R 2R
+            / Print it
+            CALL ECO
+
+        JMS PPA / Pop first_space from the stack
         SLB, NOP / "Standard loop back"
             / Reset the command-end pointer to the start of the command
                 / Put the command start address in 2R-4R
@@ -673,8 +711,8 @@ ACV, NOP
     / Save cmd_end to the stack
     3R 4R 5R -> 0R 1R 2R
     JMS PHA / 3 4 5
-    / Initialize argc to 1
-    1 -> 0R
+    / Initialize argc to 0
+    0 -> 0R
     JMS PSH / 6
 
     96 -> 0R 1R 2R
@@ -778,33 +816,7 @@ ACV, NOP
     FIM 0P 10
     JMS BPA
 
-    / THIS SECTION IS VERY UNFINISHED!!!!
 
-    / Write the address of the non-space to argv[1].start
-        / First 4 bits
-/        LD 0R
-/        DCL
-/        1R 2R -> 3P
-/        SRC 3P
-/        LD 11R
-/        WRM
-/        CALL I12
-        / Middle 4 bits
-/        LD 0R
-/        DCL
-/        1R 2R -> 3P
-/        SRC 3P
-/        LD 12R
-/        WRM
-/        CALL I12
-/        / Last 4 bits
-/        LD 0R
-/        DCL
-/        1R 2R -> 3P
-/        SRC 3P
-/        LD 13R
-/        WRM
-/        CALL I12
 
 
     RAV, NOP
@@ -1056,7 +1068,7 @@ DTC, NOP
     JMS PSH
     / Save cmd_start to 11R-13R
     6R 1R 2R -> 11R 12R 13R
-    / Check if first_space-cmd_start == 4 (4 nibbles, 2 characters)
+    / Check if first_space-cmd_start == 8 (8 nibbles, 4 characters)
     / Subtract cmd_start from first_space
     LD 5R
     CLC
@@ -1070,65 +1082,27 @@ DTC, NOP
     CMC
     SUB 11R
     XCH 3R
-    / Check if the result is 4
-    4 -> 0R 1R 2R
+    / Check if the result is 8
+    8 -> 0R 1R 2R
     CALL C12
     LD 0R
     JCN 1100B CKE
-    JUN RTZ
+    JUN RT0
 
-    / Check 'e'
-    CKE, LD 11R
-    DCL
-    SRC 6P
-    RDM
-    XCH 10R
+    / Compare the string with "echo"
+    CKE, NOP
     11R 12R 13R -> 0R 1R 2R
-    CALL I12
-    0R 1R 2R -> 11R 12R 13R
-    LD 11R
-    DCL
-    SRC 6P
-    RDM
-    XCH 1R
-    10R -> 0R
-    FIM 1P 'e'
-    CALL CMP
+    EST -> 3R 4R 5R
+    4 -> 6R 7R
+    CALL CSU
+    / If they're not equal, return 0
     LD 0R
-    JCN 1100B CKO
-    JUN RTZ
-    CKO, NOP
-    11R 12R 13R -> 0R 1R 2R
-    CALL I12
-    0R 1R 2R -> 11R 12R 13R
-
-    / Check 'o'
-    LD 11R
-    DCL
-    SRC 6P
-    RDM
-    XCH 10R
-    11R 12R 13R -> 0R 1R 2R
-    CALL I12
-    0R 1R 2R -> 11R 12R 13R
-    LD 11R
-    DCL
-    SRC 6P
-    RDM
-    XCH 1R
-    10R -> 0R
-    FIM 1P 'o'
-    CALL CMP
-    LD 0R
-    JCN 0100B RTZ
-    11R 12R 13R -> 0R 1R 2R
-    CALL I12
-    0R 1R 2R -> 11R 12R 13R
-
-    1 -> 0R
-    JUN RTD
-
-    RTZ, NOP
+    JCN 0100B RT0
+    / Otherwise, return 1
+    RT1, NOP
+        1 -> 0R
+        JUN RTD
+    RT0, NOP
         0 -> 0R
     RTD, NOP
         0R -> 1R
@@ -1142,6 +1116,160 @@ DTC, NOP
         0R -> 10R
         1R -> 0R
         JUN RET
+
+    EST, 'e'
+    'c'
+    'h'
+    'o'
+
+/ CSU(dram_begin: 12, pram_begin: 12, len: 8)
+/ Compare strings unchecked
+CSU, NOP
+    / Save 0R
+    0R -> 8R
+    / Save 10R-13R
+    10R -> 0R
+    JMS PSH
+    11R -> 0R
+    JMS PSH
+    12R -> 0R
+    JMS PSH
+    13R -> 0R
+    JMS PSH
+    / Restore 0R
+    8R -> 0R
+
+    CKL, NOP
+        / Return true if len == 0
+        LD 6R
+        JCN 1100B DTL
+        LD 7R
+        JCN 1100B DTL
+        JUN CRT
+        / Decrement len
+        DTL, LDM 1
+        XCH 7R
+        CLC
+        SUB 7R
+        XCH 7R
+        LDM 0
+        XCH 6R
+        CMC
+        SUB 6R
+        XCH 6R
+
+        CPC, NOP
+        / Load the DRAM character into 5P
+            / First nibble
+            LD 0R
+            DCL
+            1R 2R -> 8R 9R
+            SRC 4P
+            RDM
+            XCH 10R
+            / Increment the DRAM address
+            LDM 1
+            CLC
+            ADD 2R
+            XCH 2R
+            TCC
+            ADD 1R
+            XCH 1R
+            TCC
+            ADD 0R
+            XCH 0R
+            / Second nibble
+            LD 0R
+            DCL
+            1R 2R -> 8R 9R
+            SRC 4P
+            RDM
+            XCH 11R
+            / Increment the DRAM address
+            LDM 1
+            CLC
+            ADD 2R
+            XCH 2R
+            TCC
+            ADD 1R
+            XCH 1R
+            TCC
+            ADD 0R
+            XCH 0R
+
+        / Load the PRAM character into 6P
+            / Clear write enable
+            14 -> 8R
+            SRC 4P
+            LDM 0
+            WRR
+            / Send high 4 bits of PRAM address
+            15 -> 8R
+            SRC 4P
+            LD 3R
+            WRR
+            / Send low 8 bits of PRAM address
+            SRC 2P
+            / Do the read
+            WPM
+            WPM
+            / Put the first nibble in 12R
+            14 -> 8R
+            SRC 4P
+            RDR
+            XCH 12R
+            / Put the second nibble in 13R
+            15 -> 8R
+            SRC 4P
+            RDR
+            XCH 13R
+            / Increment the PRAM address
+            LDM 1
+            CLC
+            ADD 5R
+            XCH 5R
+            TCC
+            ADD 4R
+            XCH 4R
+            TCC
+            ADD 3R
+            XCH 3R
+
+        / If the first nibbles aren't equal, return false
+        CN1, LD 10R
+        CLC
+        SUB 12R
+        JCN 0100B CN2
+        JUN CRF
+        / If the second nibbles aren't equal, return false
+        CN2, LD 11R
+        CLC
+        SUB 13R
+        JCN 0100B LPB
+        JUN CRF
+        LPB, JUN CKL
+
+    CRT, JMS POP
+    0R -> 13R
+    JMS POP
+    0R -> 12R
+    JMS POP
+    0R -> 11R
+    JMS POP
+    0R -> 10R
+    1 -> 0R
+    JUN RET
+
+    CRF, JMS POP
+    0R -> 13R
+    JMS POP
+    0R -> 12R
+    JMS POP
+    0R -> 11R
+    JMS POP
+    0R -> 10R
+    0 -> 0R
+    JUN RET
 
 
 / Increment a 12-bit number - I12(num: 12) -> plus_1: 12
@@ -1333,11 +1461,11 @@ RET, NOP
     / Send high 4 bits of program RAM address
     15 -> 8R
     SRC 4P
-    *+144 -> 8R _ _
+    RJ1 -> 8R _ _
     LD 8R
     WRR
     / Send low 8 bits of program RAM address
-    *+140 -> _ 8R 9R
+    RJ1 -> _ 8R 9R
     SRC 4P
 
     / Write the JUN opcode
@@ -1345,39 +1473,32 @@ RET, NOP
     WPM
     / Write the first nibble of the address to jump to, into program memory
         / Get the first nibble of the address to jump to, from the stack into 0R
-            / Decrement the stack pointer by 4
-            4 -> 8R
-            LD 15R
+            / Put the stack pointer minus 4 into 4P
+            7P -> 4P
+            LDM 4
+            XCH 9R
             CLC
-            SUB 8R
-            XCH 15R
+            SUB 9R
+            XCH 9R
+            LDM 0
+            XCH 8R
             CMC
-            0 -> 8R
-            LD 14R
             SUB 8R
-            XCH 14R
+            XCH 8R
             / Put the first nibble of the address to jump to into 0R
             LDM 0
             DCL
-            SRC 7P
+            SRC 4P
             RDM
             XCH 0R
-            / Restore the stack pointer by incrementing it by 4
-            LDM 4
-            CLC
-            ADD 15R
-            XCH 15R
-            TCC
-            ADD 14R
-            XCH 14R
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
-        *+106 -> 8R _ _
+        RJ1 -> 8R _ _
         LD 8R
         WRR
         / Send low 8 bits of program RAM address
-        *+102 -> _ 8R 9R
+        RJ1 -> _ 8R 9R
         SRC 4P
         / Do the program memory write
         LD 0R
@@ -1385,39 +1506,32 @@ RET, NOP
 
     / Write the second nibble of the address to jump to, into program memory
         / Get the second nibble of the address to jump to, from the stack into 0R
-            / Decrement the stack pointer by 3
-            3 -> 8R
-            LD 15R
+            / Put the stack pointer minus 3 into 4P
+            7P -> 4P
+            LDM 3
+            XCH 9R
             CLC
-            SUB 8R
-            XCH 15R
+            SUB 9R
+            XCH 9R
+            LDM 0
+            XCH 8R
             CMC
-            0 -> 8R
-            LD 14R
             SUB 8R
-            XCH 14R
+            XCH 8R
             / Put the second nibble of the address to jump to into 0R
             LDM 0
             DCL
-            SRC 7P
+            SRC 4P
             RDM
             XCH 0R
-            / Restore the stack pointer by incrementing it by 3
-            LDM 3
-            CLC
-            ADD 15R
-            XCH 15R
-            TCC
-            ADD 14R
-            XCH 14R
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
-        *+69 -> 8R _ _
+        RJ2 -> 8R _ _
         LD 8R
         WRR
         / Send low 8 bits of program RAM address
-        *+65 -> _ 8R 9R
+        RJ2 -> _ 8R 9R
         SRC 4P
         / Do the program memory write
         LD 0R
@@ -1425,49 +1539,36 @@ RET, NOP
 
     / Write the third nibble of the address to jump to, into program memory
         / Get the third nibble of the address to jump to, from the stack into 0R
-            / Decrement the stack pointer by 2
-            2 -> 8R
-            LD 15R
+            / Put the stack pointer minus 2 into 4P
+            7P -> 4P
+            LDM 2
+            XCH 9R
             CLC
-            SUB 8R
-            XCH 15R
+            SUB 9R
+            XCH 9R
+            LDM 0
+            XCH 8R
             CMC
-            0 -> 8R
-            LD 14R
             SUB 8R
-            XCH 14R
+            XCH 8R
             / Put the third nibble of the address to jump to into 0R
             LDM 0
             DCL
-            SRC 7P
+            SRC 4P
             RDM
             XCH 0R
-            / Restore the stack pointer by incrementing it by 2
-            LDM 2
-            CLC
-            ADD 15R
-            XCH 15R
-            TCC
-            ADD 14R
-            XCH 14R
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
-        *+31 -> 8R _ _
+        RJ2 -> 8R _ _
         LD 8R
         WRR
         / Send low 8 bits of program RAM address
-        *+27 -> _ 8R 9R
+        RJ2 -> _ 8R 9R
         SRC 4P
         / Do the program memory write
         LD 0R
         WPM
-
-    / Clear write enable
-    14 -> 8R
-    SRC 4P
-    LDM 0
-    WRR
 
     / Restore 0R
     JMS POP
@@ -1484,11 +1585,12 @@ RET, NOP
     XCH 14R
 
     / NOPs will be replaced with JUN instruction
-    NOP
-    NOP
+    RJ1, NOP
+    RJ2, NOP
 
 
 SUF, NOP
+    0 -> 7P
     FIM 0P 'S'
     CALL WCH
     FIM 0P 'U'
@@ -1498,6 +1600,7 @@ SUF, NOP
     JUN FRZ
 
 SOF, NOP
+    0 -> 7P
     FIM 0P 'S'
     CALL WCH
     FIM 0P 'O'
@@ -1507,6 +1610,7 @@ SOF, NOP
     JUN FRZ
 
 MOF, NOP
+    0 -> 7P
     FIM 0P 'M'
     CALL WCH
     FIM 0P 'O'

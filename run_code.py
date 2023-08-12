@@ -3,6 +3,7 @@ from time import sleep, time
 
 import jsonpickle
 
+from assemble import Expression
 from disassemble import disas_instr
 from log import debug_log
 from parse_instruction import *
@@ -23,7 +24,7 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
     args = get_args(instruction, cpu.prgm_cntr, cpu.memory.program_ram)
     if not quiet:
         print(
-            f"Executing {Fore.RED}{disas_instr(instruction, args)}{Style.RESET_ALL} at {Fore.BLUE}{binary_to_int(cpu.prgm_cntr)}{Style.RESET_ALL}")
+            f"Executing {Fore.RED}{disas_instr(instruction, args, values_to_labels)}{Style.RESET_ALL} at {Fore.BLUE}{binary_to_int(cpu.prgm_cntr)}{Style.RESET_ALL}")
     cpu.prgm_cntr = addr_of_next_instr(cpu.prgm_cntr, instruction)
 
     if instruction == NOP:
@@ -73,7 +74,7 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
         cpu.prgm_cntr = args[0]
         addr_int = binary_to_int(args[0])
         if values_to_labels and addr_int in values_to_labels:
-            debug_log(f"[CPU] Jumping to {values_to_labels[addr_int]}")
+            debug_log(f"[CPU] JUN to {values_to_labels[addr_int]}")
     elif instruction == JCN:
         inverted, check_acc_zero, check_carry, check_test = args[0]
 
@@ -87,6 +88,9 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
 
         if should_jump:
             cpu.prgm_cntr[4:] = args[1]
+            # debug_log(f"[CPU] Condition {args[0]} met (acc={binary_to_int(cpu.accumulator)}, carry={cpu.carry_bit}); jumping")
+        # else:
+        #     debug_log(f"[CPU] Condition not met (acc={binary_to_int(cpu.accumulator)}, carry={cpu.carry_bit}); not jumping")
     elif instruction == JIN:
         ncntr = cpu.get_register_pair(args[0])
         cpu.prgm_cntr[4:] = ncntr
@@ -155,10 +159,7 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
         cpu.memory.get_status_ram_chars()[3] = cpu.accumulator.copy()
     elif instruction == RDR:
         port = cpu.memory.get_romio_port()
-        port_n = binary_to_int(cpu.memory.selected_addr[:4])
         cpu.accumulator = [line.status for line in port.lines]
-        if port_n == 0 and cpu.index_regs[10] == int_to_binary(0, n_digits=4) and cpu.accumulator[0] == True:
-            debug_log(f"[CPU] Received character separator")
     elif instruction == ADM:
         added = add_binary(cpu.accumulator, cpu.memory.get_data_ram_char(), cpu.carry_bit)
         cpu.accumulator = added.lower_bits
@@ -187,10 +188,10 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
             cpu.memory.program_ram[addr*8+nibble_start:addr*8+nibble_end] = cpu.accumulator.copy()
             # debug_log(f"[CPU] Wrote {binary_to_string(cpu.accumulator)} to program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
         else:
-            to_read = cpu.memory.program_ram[addr * 8 + nibble_start:addr * 8 + nibble_end]
+            to_read = cpu.memory.program_ram[addr * 8 + nibble_start : addr * 8 + nibble_end]
             rom_port_n = 14 if cpu.memory.wpm_half_byte == 0 else 15
-            for line in zip(cpu.memory.rom_ports[rom_port_n].lines, to_read):
-                line.status = to_read
+            for line, read_bit in zip(cpu.memory.rom_ports[rom_port_n].lines, to_read):
+                line.status = read_bit
             debug_log(f"[CPU] Read {binary_to_string(to_read)} from program RAM address {addr} (nibble {cpu.memory.wpm_half_byte})")
 
         cpu.memory.wpm_half_byte = 0 if cpu.memory.wpm_half_byte == 1 else 1
@@ -203,9 +204,8 @@ def single_step(cpu: Intel4004, values_to_labels: dict[int, str] | None = None, 
 
 
 def turn_on(cpu: Intel4004):
-    debug_file = open("debug.json", "r")
-    labels_to_values: dict[str, int] = jsonpickle.loads(debug_file.read())
-    debug_log(str(labels_to_values))
+    with open("debug.json", "r") as debug_file:
+        labels_to_values: dict[str, int] = jsonpickle.loads(debug_file.read())
     values_to_labels: dict[int, str] = {v: k for k, v in labels_to_values.items()}
     while True:
         single_step(cpu, values_to_labels, quiet=True)

@@ -123,7 +123,7 @@ class Memory:
             if line.io == InputOrOutput.OUTPUT:
                 line.status = i
             else:
-                debug_log(f"[CPU] Not writing to port {port_n}, as it is an input port")
+                debug_log(f"[CPU] Not writing to line {n} port {port_n}, as it is an input line")
             n += 1
 
     def set_ramo_port(self, set_to: list[bool]) -> None:
@@ -176,12 +176,12 @@ class Intel4004:
         self.test_signal: bool = False
 
     def get_register_pair(self, pair_n: list[bool]) -> list[bool]:
-        return self.index_regs[binary_to_int(pair_n) * 2] + self.index_regs[binary_to_int(pair_n) * 2 + 1]
+        return self.index_regs[binary_to_int(pair_n)*2] + self.index_regs[binary_to_int(pair_n)*2 + 1]
 
     def set_register_pair(self, pair_n: list[bool], set_to: list[bool]) -> None:
         assert len(set_to) == 8, "Register pairs can only be set to 8 bit values"
-        self.index_regs[binary_to_int(pair_n) * 2] = set_to[:4]
-        self.index_regs[binary_to_int(pair_n) * 2 + 1] = set_to[4:]
+        self.index_regs[binary_to_int(pair_n)*2] = set_to[:4]
+        self.index_regs[binary_to_int(pair_n)*2 + 1] = set_to[4:]
 
     def __str__(self):
         out = ""
@@ -189,7 +189,7 @@ class Intel4004:
         for i in range(len(self.index_regs)):
             out += f"R{i}={binary_to_int(self.index_regs[i])}, "
         out += "\n"
-        out += "Stack:\n"
+        out += "Hardware stack:\n"
         for i in range(len(self.stack.regs)):
             out += str(binary_to_int(self.stack.regs[i]))
             if i == self.stack.pointer:

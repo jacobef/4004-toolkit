@@ -1,24 +1,116 @@
 import re
 from textwrap import wrap
+from typing import Self
 
 import jsonpickle
 
 from instructions import *
 from binary_utils import *
 from string import ascii_lowercase
-from enum import Enum, auto
+from dataclasses import dataclass
+import math
 
 from log import debug_log
 
 
-class GivenArgType(Enum):
-    REGISTER = auto()
-    REGISTER_PAIR = auto()
-    DECIMAL = auto()
-    BINARY = auto()
-    HEX = auto()
-    LABEL = auto()
-    CONDITION = auto()
+@dataclass(frozen=True, eq=True)
+class ExprType:
+    name: str
+    n_bits: int
+
+    def __str__(self):
+        return self.name
+
+
+class ExprTypes:
+    REG = ExprType("register", 4)
+    REG_PAIR = ExprType("register pair", 3)
+    ADDR8 = ExprType("8-bit address", 8)
+    ADDR12 = ExprType("12-bit address", 12)
+    CHAR = ExprType("ASCII character", 8)
+
+    @staticmethod
+    def NUM(val: int):
+        # not sure how to make this less bad
+        n_bits = 0 if val == 0 else math.ceil(math.log2(val))
+        return ExprType(f"{n_bits}-bit number", n_bits)
+
+
+@dataclass
+class Expression:
+    as_int: int | None  # None means it's a placeholder
+    type: ExprType
+
+    def as_asm(self):
+        if self.as_int is None and self.type == ExprTypes.REG:
+            return "_"
+        elif self.as_int is None:
+            raise Exception("only REG can have placeholders for now (self.val should not be None)")
+        assert self.as_int is not None
+        if self.type == ExprTypes.REG:
+            return str(self.as_int) + "R"
+        elif self.type == ExprTypes.REG_PAIR:
+            return str(self.as_int) + "P"
+        elif self.type in (ExprTypes.ADDR8, ExprTypes.ADDR12):
+            raise Exception("No standard way to represent addresses in 4004 assembly")
+        elif self.type == ExprTypes.CHAR:
+            return "'" + chr(self.as_int) + "'"
+        elif self.type == ExprTypes.NUM(self.as_int):  # bleh
+            return str(self.as_int)
+        else:
+            raise AssertionError(f"as_asm did not account for the type {self.type}; this should never happen")
+
+    def __add__(self, other: Self) -> Self:
+        ET = ExprTypes
+        types = {self.type, other.type}
+
+        if types in [{ET.ADDR8, ET.ADDR12}, {ET.ADDR8, ET.ADDR8}, {ET.ADDR12, ET.ADDR12}]:
+            raise Exception("Adding 2 addresses is a bad idea")
+        elif ET.REG in types or ET.REG_PAIR in types:
+            raise Exception("Arithmetic on registers or register pairs is a bad idea")
+        elif types == {ET.CHAR, ET.CHAR}:
+            raise Exception("Adding 2 ASCII characters to each other is a bad idea")
+        elif (ET.ADDR8 in types or ET.ADDR12 in types) and ET.CHAR in types:
+            raise Exception("Adding an ASCII character to an address makes no sense")
+        elif types in [{ET.ADDR12, ET.NUM(self.as_int)}, {ET.ADDR12, ET.NUM(other.as_int)}]:
+            result_type = ET.ADDR12
+        elif types in [{ET.ADDR8, ET.NUM(self.as_int)}, {ET.ADDR8, ET.NUM(other.as_int)}]:
+            result_type = ET.ADDR8
+        elif types in [{ET.CHAR, ET.NUM(self.as_int)}, {ET.CHAR, ET.NUM(other.as_int)}]:
+            result_type = ET.CHAR
+        elif types == {ET.NUM(self.as_int), ET.NUM(other.as_int)}:
+            result_type = ET.NUM
+        else:
+            raise AssertionError(f"Expression.__add__ failed to account for the case {types}; this should never happen")
+
+        return Expression(self.as_int + other.as_int, result_type)
+
+    def __sub__(self, other: Self) -> Self:
+        ET = ExprTypes
+
+        match [self.type, other.type]:
+            case [ET.REG, _] | [_, ET.REG] | [ET.REG_PAIR, _] | [_, ET.REG_PAIR]:
+                raise Exception("Arithmetic on registers or register pairs is a bad idea")
+            case [ET.ADDR8, _] | [_, ET.ADDR8]:
+                raise Exception("Doing subtraction with 8-bit addresses is sketchy; this is an error for now")
+            case [ET.ADDR12, ET.ADDR12 | ET.NUM(other.as_int)]:
+                result_type = ET.ADDR12
+            case [ET.ADDR12, _]:
+                raise Exception(f"Subtracting a {other.type} from a 12-bit address is a bad idea")
+            case [ET.CHAR, ET.NUM(other.as_int)]:
+                result_type = ET.CHAR
+            case [ET.CHAR, _]:
+                raise Exception(f"Subtracting a {other.type} from an ASCII character makes no sense")
+            case [ET.NUM(self.as_int), ET.NUM(other.as_int)]:
+                result_type = ET.NUM(self.as_int - other.as_int)
+            case [ET.NUM, _]:
+                raise Exception(f"Subtracting a {other.type} from a number makes no sense")
+            case _:
+                raise AssertionError(f"Expression.__add__ failed to account for the case {[self.type, other.type]}; this should never happen")
+
+        if self.as_int - other.as_int < 0:
+            raise Exception(f"The subtraction result of {self.as_int}-{other.as_int} is negative")
+        return Expression(self.as_int - other.as_int, result_type)
 
 
 def remove_comment(line: str):
@@ -60,29 +152,29 @@ def is_assignment(line: str) -> bool:
     return len(line_split) == 3 and line_split[1] == "="
 
 
-def eval_assignment(line: str, pc: int, labels_to_values: dict[str, int]) -> (str, int):
+def eval_assignment(line: str, pc: int, labels_to_values: dict[str, Expression]) -> tuple[str, Expression]:
     label = line.split(" ")[0]
-    value = expr_as_int(line.split(" ")[2], pc, labels_to_values)
+    value = str_to_expr(line.split(" ")[2], pc, labels_to_values)
     return label, value
 
 
-def get_labels_to_values(code: list[str]) -> dict[str, int]:
-    labels_to_values = {}
+def get_labels_to_addrs(code: list[str]) -> dict[str, Expression]:
+    labels_to_addrs: dict[str, Expression] = {}
     pseudo_pc = 0
     for line in code:
         if is_assignment(line):
             continue
         elif "->" in line.split(" "):
-            macro_expanded = expand_arrow_macro(line, pseudo_pc)
-            for expanded_line in macro_expanded:
-                pseudo_pc += len(assemble_line(expanded_line, pseudo_pc)) // 8
+            pseudo_pc += size_of_arrow_macro(line, pseudo_pc)
         else:
             label, mnemonic, args = get_label_mnemonic_args(line)
             if label:
-                labels_to_values[label] = pseudo_pc
+                if label in labels_to_addrs:
+                    raise ValueError(f"Duplicate label {label}")
+                labels_to_addrs[label] = Expression(pseudo_pc, ExprTypes.ADDR12)
             instruction = get_instr_by_mnemonic(mnemonic)
             pseudo_pc += instruction.n_bytes if instruction else 1
-    return labels_to_values
+    return labels_to_addrs
 
 
 def parse_opcode(opcode: str) -> list[str]:
@@ -113,7 +205,7 @@ def parse_opcode(opcode: str) -> list[str]:
 def get_char_expr_ord(expr: str) -> int:
     if len(expr) < 3 or expr[0] != "'" or expr[-1] != "'":
         raise ValueError(
-            f"Invalid character expression \"{expr}\". If you're trying to do a space character, it's '\s'.")
+            f"Invalid character expression \"{expr}\". If you're trying to do a space character, it's '\\s'.")
     inner_char = expr[1:-1]
     if inner_char == r"\a":
         return ord("\a")
@@ -133,50 +225,55 @@ def get_char_expr_ord(expr: str) -> int:
         return ord(inner_char)
 
 
-def expr_as_int(arg: str, pc: int, labels_to_values: dict[str, int] | None = None) -> int:
+def str_to_expr(arg: str, pc: int, labels_to_values: dict[str, Expression] | None = None) -> Expression:
     if "+" in arg or "-" in arg:
-        term1 = expr_as_int(re.split(r"[+-]", arg)[0], pc, labels_to_values)
-        term2 = expr_as_int(re.split(r"[+-]", arg)[1], pc, labels_to_values)
+        term1 = str_to_expr(re.split(r"[+-]", arg)[0], pc, labels_to_values)
+        term2 = str_to_expr(re.split(r"[+-]", arg)[1], pc, labels_to_values)
         res = term1 + term2 if "+" in arg else term1 - term2
         return res
     elif arg == "*":
-        return pc
+        return Expression(pc, ExprTypes.ADDR12)
+    elif arg == "_":
+        return Expression(None, ExprTypes.REG)
     elif arg[0] == "'":
-        return get_char_expr_ord(arg)
+        return Expression(get_char_expr_ord(arg), ExprTypes.CHAR)
     elif arg[0] not in "1234567890" and labels_to_values:
         return labels_to_values[arg]
     elif arg[0] not in "1234567890":
         raise ValueError(
             f"Invalid expression \"{arg}\" (might be a label, but function was called without labels_to_values)")
-    elif arg[-1] == "B":  # binary
-        return int(arg[:-1], 2)
-    elif arg[-1] == "H":  # hexadecimal
-        return int(arg[:-1], 16)
-    elif arg[-1] == "R":  # register
-        return int(arg[:-1])
-    elif arg[-1] == "P":  # register pair
-        return int(arg[:-1])
+    elif arg[-1] == "B":
+        as_int = int(arg[:-1], 2)
+        return Expression(as_int, ExprTypes.NUM(as_int))
+    elif arg[-1] == "H":
+        as_int = int(arg[:-1], 16)
+        return Expression(as_int, ExprTypes.NUM(as_int))
+    elif arg[-1] == "R":
+        return Expression(int(arg[:-1]), ExprTypes.REG)
+    elif arg[-1] == "P":
+        return Expression(int(arg[:-1]), ExprTypes.REG_PAIR)
     else:
-        return int(arg)
+        return Expression(int(arg), ExprTypes.NUM(int(arg)))
 
 
-def assemble_line(line: str, pseudo_pc: int, labels_to_values: dict[str, int] | None = None) -> str:
+def assemble_line(line: str, pseudo_pc: int, labels_to_values: dict[str, Expression] | None = None) -> str:
     out = ""
 
     label, mnemonic, args = get_label_mnemonic_args(line)
     instruction = get_instr_by_mnemonic(mnemonic)
     if not instruction:
-        return binary_to_string(int_to_binary(expr_as_int(mnemonic, pseudo_pc), n_digits=8))
-
+        return binary_to_string(int_to_binary(str_to_expr(mnemonic, pseudo_pc).as_int, n_digits=8))
+    if instruction == SRC:
+        pass
     opcode_parsed = parse_opcode(instruction.opcode)
-    int_args = [expr_as_int(arg, pseudo_pc, labels_to_values) for arg in args]
+    int_args = [str_to_expr(arg, pseudo_pc, labels_to_values).as_int for arg in args]
 
     if "a" * 8 in opcode_parsed:
-        pc_after_instr = int_to_binary(pseudo_pc+2, n_digits=12)
+        pc_after_instr = int_to_binary(pseudo_pc + 2, n_digits=12)
         jump_to = int_to_binary(int_args[1], n_digits=12)
         if pc_after_instr[:4] != jump_to[:4]:
             raise Exception(
-                f"8-bit jump across a page boundary; instruction is on address {pseudo_pc} (will jump to page {binary_to_int(pc_after_instr[:4])}) and is trying to jump to address {int_args[1]} (page {binary_to_int(jump_to[:4])})")
+                f"8-bit jump across a page boundary; instruction ({line}) is on address {pseudo_pc} (will jump to page {binary_to_int(pc_after_instr[:4])}) and is trying to jump to address {int_args[1]} (page {binary_to_int(jump_to[:4])})")
 
     arg_i = 0
     for item in opcode_parsed:
@@ -206,40 +303,60 @@ def n_nibbles(exprs: list[str]):
     return res
 
 
-def expand_arrow_macro(line: str, pc: int) -> list[str]:
-    in_strs = []
-    out_strs = []
-    for expr_str in line.split("->")[0].strip().split(" "):
-        if expr_str[-1] == "P":
-            in_strs.append(f"{expr_as_int(expr_str, pc)*2}R")
-            in_strs.append(f"{expr_as_int(expr_str, pc)*2+1}R")
-        elif "*" in expr_str:
-            in_strs.append(str(expr_as_int(expr_str, pc)))
-        else:
-            in_strs.append(expr_str)
+def size_of_arrow_macro(line: str, pc: int) -> int:
+    result = 0
     for expr_str in line.split("->")[1].strip().split(" "):
-        if expr_str[-1] == "P":
-            out_strs.append(f"{expr_as_int(expr_str, pc)*2}R")
-            out_strs.append(f"{expr_as_int(expr_str, pc)*2+1}R")
-        else:
-            out_strs.append(expr_str)
+        expr = str_to_expr(expr_str, pc)
+        if expr.as_int is None:
+            pass
+        elif expr.type == ExprTypes.REG:
+            result += 2
+        elif expr.type == ExprTypes.REG_PAIR:
+            result += 4
+    return result
 
-    assert all(expr not in out_strs for expr in in_strs), "In and out can't overlap"
+
+def expand_arrow_macro(line: str, pc: int, labels_to_values: dict[str, Expression]) -> list[str]:
+    in_exprs: list[Expression] = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in line.split("->")[0].strip().split(" ")]
+    in_num: int | None = None
+    in_regs: list[int | None] = []
+    for expr in in_exprs:
+        if expr.type == ExprTypes.REG_PAIR:
+            in_regs.append(expr.as_int*2)
+            in_regs.append(expr.as_int*2 + 1)
+        elif expr.type == ExprTypes.REG:
+            in_regs.append(expr.as_int)
+        else:
+            assert len(in_exprs) == 1, "In number must stand alone"
+            in_num = expr.as_int
+    out_exprs: list[Expression] = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in line.split("->")[1].strip().split(" ")]
+    out_regs: list[int] = []
+    for expr in out_exprs:
+        if expr.type == ExprTypes.REG_PAIR:
+            out_regs.append(expr.as_int*2)
+            out_regs.append(expr.as_int*2 + 1)
+        elif expr.type == ExprTypes.REG:
+            out_regs.append(expr.as_int)
+        else:
+            raise ValueError("The out part of an arrow expression must only contain registers and register pairs")
+
+    assert all(expr not in out_exprs for expr in in_exprs), "In and out can't overlap"
     result = []
-    if in_strs[0][-1] in "1234567890":
-        assert len(in_strs) == 1, "In number must stand alone"
-        in_num = int_to_binary(int(in_strs[0]), n_digits=len(out_strs)*4)
-        in_nibbles = wrap(binary_to_string(in_num), 4)
-        for nibble, reg in zip(in_nibbles, out_strs):
-            if reg != "_":
+    if in_num is not None:
+        num_bin = int_to_binary(in_num, n_digits=len(out_regs)*4)
+        in_nibbles = wrap(binary_to_string(num_bin), 4)
+        for nibble, reg in zip(in_nibbles, out_regs):
+            if reg is not None:
                 result.append(f"LDM {nibble}B")
-                result.append(f"XCH {reg}")
+                result.append(f"XCH {reg}R")
+    elif len(in_regs) != 0:
+        assert len(in_regs) == len(in_regs), "In and out sizes don't match"
+        for in_reg, out_reg in zip(in_regs, out_regs):
+            if out_reg is not None:
+                result.append(f"LD {in_reg}R")
+                result.append(f"XCH {out_reg}R")
     else:
-        assert len(in_strs) == len(out_strs), "In and out sizes don't match"
-        for in_reg, out_reg in zip(in_strs, out_strs):
-            if out_reg != "_":
-                result.append(f"LD {in_reg}")
-                result.append(f"XCH {out_reg}")
+        raise Exception("in_num isn't set and in_regs is empty; this should never happen")
     return result
 
 
@@ -270,12 +387,12 @@ JUN {line.split(" ")[1]}
         else:
             code_calls_expanded.append(line)
 
-    labels_to_values = get_labels_to_values(code_calls_expanded)
+    labels_to_values = get_labels_to_addrs(code_calls_expanded)
     debug_file = open("debug.json", "w")
-    debug_file.write(jsonpickle.dumps(labels_to_values))
+    debug_file.write(jsonpickle.dumps({l: v.as_int for l, v in labels_to_values.items()}))
     debug_file.close()
 
-    debug_log(f"[ASSEMBLER] address labels: {labels_to_values}")
+    debug_log(f"[ASSEMBLER] Address labels: {labels_to_values}")
     out = ""
 
     for line in code_calls_expanded:
@@ -283,7 +400,7 @@ JUN {line.split(" ")[1]}
             label, value = eval_assignment(line, len(out) // 8, labels_to_values)
             labels_to_values[label] = value
         elif "->" in line.split(" "):
-            macro_expanded = expand_arrow_macro(line, len(out) // 8)
+            macro_expanded = expand_arrow_macro(line, len(out) // 8, labels_to_values)
             for expanded_line in macro_expanded:
                 out += assemble_line(expanded_line, len(out) // 8)
         else:

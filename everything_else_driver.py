@@ -85,32 +85,46 @@ def main():
     start_thread(lambda: getch(queue))
 
 
-def start_debug(cpu):
+def start_debug(cpu: Intel4004):
+    with open("debug.json", "r") as debug_file:
+        labels_to_values: dict[str, int] = jsonpickle.loads(debug_file.read())
+    values_to_labels: dict[int, str] = {v: k for k, v in labels_to_values.items()}
+
     last_cmd = None
     while True:
         cmd = input(">>> " + Fore.BLUE)
         print(Style.RESET_ALL)
         if cmd == "":
             cmd = last_cmd
-        if cmd == "s":
-            single_step(cpu)
-        elif cmd == "r":
+        if cmd == "s":  # step
+            single_step(cpu, values_to_labels)
+        elif cmd == "r":  # run
             while True:
-                single_step(cpu)
-        elif cmd == "p":
+                single_step(cpu, values_to_labels)
+        elif cmd == "p":  # print CPU state
             print(cpu)
-        elif cmd == "pkb":
-            print(cpu.memory.rom_ports[0].lines + cpu.memory.rom_ports[1].lines)
-        elif cmd == "pp":
+        elif cmd == "pss":  # print software stack (thanks GPT-4 for the implementation)
+            # Get the stack pointer value from the 7th register pair
+            stack_pointer_nibble_index = binary_to_int(cpu.get_register_pair([True, True, True]))
+            # Extract the data bits from bank 0
+            data_bits = [bit for chip in cpu.memory.ram_banks[0] for register in chip for char in register.data_chars
+                         for bit in char]
+            # Convert the bits into nibbles
+            nibbles = [binary_to_string(data_bits[i:i + 4]) for i in range(0, len(data_bits), 4)]
+            # Print the nibbles one per line, adding an arrow where the stack pointer is
+            for i, nibble in enumerate(nibbles):
+                print(nibble, "<-" if i == stack_pointer_nibble_index else "")
+
+        elif cmd == "pp":  # print ports
             print(cpu.memory.rom_ports)
-        elif cmd == "d":
-            print(disassemble(cpu, 10, 10))
-        elif cmd == "sp":
-            single_step(cpu)
+        elif cmd == "d":  # disassemble
+            print(disassemble(cpu, values_to_labels, 10, 10))
+        elif cmd == "sp":  # step and print CPU state
+            single_step(cpu, values_to_labels)
             print(cpu)
-        elif cmd == "sd":
-            single_step(cpu)
-            print(disassemble(cpu, 10, 10))
+        elif cmd == "sd":  # step and disassemble
+            single_step(cpu, values_to_labels)
+            print(disassemble(cpu, values_to_labels, 10, 10))
         elif cmd == "q":
             quit()
         elif cmd == "a":
@@ -123,7 +137,7 @@ def start_debug(cpu):
             print("Re-assembled")
         elif cmd.split(" ")[0] == "c":
             while binary_to_int(cpu.prgm_cntr) != int(cmd.split(" ")[1]):
-                single_step(cpu)
+                single_step(cpu, values_to_labels)
         elif cmd == "help":
             print(
                 "Type s to run one line, sd to run one line and then dissasemble, r to run all of the code, p to print CPU state, d to disassemble the assembly, cs to get the CPU specs, sp to step and print the CPU state, a to re-assemble to code, pdf to get the PDFs with helpful info, hit the enter key to repeat the last command, or q to quit")
