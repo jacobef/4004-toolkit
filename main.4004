@@ -6,15 +6,9 @@
     / The third argument should be spread across 4R and 5R.
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
-0
-0
-0
-0
-0
-0
-0
-0
-0
+
+NOP
+NOP
 
 / Set the stack counter to 0
 FIM 7P 0
@@ -350,14 +344,7 @@ PSH, NOP
     LD 0R
     WRM
     / Increment the stack counter
-    LD 15R
-    LDM 1
-    CLC
-    ADD 15R
-    XCH 15R
-    TCC
-    ADD 14R
-    XCH 14R
+    7P += 1
     JCN 1010B RPS / Crash if stack overflow
     JUN SOF
     RPS, BBL 0
@@ -374,14 +361,7 @@ P8R, NOP
     LD 8R
     WRM
     / Increment the stack counter
-    LD 15R
-    LDM 1
-    CLC
-    ADD 15R
-    XCH 15R
-    TCC
-    ADD 14R
-    XCH 14R
+    7P += 1
     JCN 1010B RP8 / Crash if stack overflow
     JUN SOF
     RP8, BBL 0
@@ -423,25 +403,13 @@ WRA, LDM 0
     LD 2R
     WRM
     / Increment address
-    LDM 1
-    CLC
-    ADD 1R
-    XCH 1R
-    TCC
-    ADD 0R
-    XCH 0R
+    0P += 1
     / Middle 4 bits
     SRC 0P
     LD 3R
     WRM
     / Increment address
-    LDM 1
-    CLC
-    ADD 1R
-    XCH 1R
-    TCC
-    ADD 0R
-    XCH 0R
+    0P += 1
     / Last 4 bits
     SRC 0P
     LD 4R
@@ -468,25 +436,13 @@ FPA, LDM 0
     RDM
     XCH 0R
     / Increment address
-    LDM 1
-    CLC
-    ADD 5R
-    XCH 5R
-    TCC
-    ADD 4R
-    XCH 4R
+    2P += 1
     / Middle 4 bits to 1R
     SRC 2P
     RDM
     XCH 1R
     / Increment address
-    LDM 1
-    CLC
-    ADD 5R
-    XCH 5R
-    TCC
-    ADD 4R
-    XCH 4R
+    2P += 1
     / Last 4 bits to 2R
     SRC 2P
     RDM
@@ -535,25 +491,13 @@ BPA, NOP
     RDM
     XCH 0R
     / Increment the address
-    LDM 1
-    CLC
-    ADD 5R
-    XCH 5R
-    TCC
-    ADD 4R
-    XCH 4R
+    2P += 1
     / Middle 4 bits to 1R
     SRC 2P
     RDM
     XCH 1R
     / Increment the address
-    LDM 1
-    CLC
-    ADD 5R
-    XCH 5R
-    TCC
-    ADD 4R
-    XCH 4R
+    2P += 1
     / Last 4 bits to 2R
     SRC 2P
     RDM
@@ -563,18 +507,7 @@ BPA, NOP
 / POP() -> val: 4 - Pop from the stack. Does not clobber any registers (aside from decrementing 7P, and returning to 0R)
 POP, NOP
     / Decrement the stack counter
-    / Lower 4 bits
-    1 -> 0R
-    LD 15R
-    CLC
-    SUB 0R
-    XCH 15R
-    / Upper 4 bits
-    0 -> 0R
-    LD 14R
-    CMC
-    SUB 0R
-    XCH 14R
+    7P -= 1
     JCN 0010B DRD / Crash if stack underflow
     JUN SUF
     / Do the read; will always be in RAM bank 0
@@ -584,6 +517,8 @@ POP, NOP
     RDM
     XCH 0R
     BBL 0
+
+PRT,
 
 / ECO(first_space: 12, cmd_end: 12) - Print the argument
 ECO, NOP
@@ -619,16 +554,8 @@ ECO, NOP
     JUN REO
 
     / Otherwise, increment our counter so it's at the start of the argument
-    NRT, LDM 2
-    CLC
-    ADD 13R
-    XCH 13R
-    TCC
-    ADD 12R
-    XCH 12R
-    TCC
-    ADD 11R
-    XCH 11R
+    NRT, NOP
+    11R 12R 13R += 2
 
     PRL, NOP
         / Break if we've reached cmd_end
@@ -648,16 +575,7 @@ ECO, NOP
             RDM
             XCH 0R
             / Increment the counter by a nibble
-            LDM 1
-            CLC
-            ADD 13R
-            XCH 13R
-            TCC
-            ADD 12R
-            XCH 12R
-            TCC
-            ADD 11R
-            XCH 11R
+            11R 12R 13R += 1
             / Load second nibble into 1R
             LD 11R
             DCL
@@ -667,16 +585,7 @@ ECO, NOP
             / Display the character
             CALL WCH
             / Increment the counter by a nibble
-            LDM 1
-            CLC
-            ADD 13R
-            XCH 13R
-            TCC
-            ADD 12R
-            XCH 12R
-            TCC
-            ADD 11R
-            XCH 11R
+            11R 12R 13R += 1
         JUN PRL
 
     REO, NOP
@@ -816,9 +725,6 @@ ACV, NOP
     FIM 0P 10
     JMS BPA
 
-
-
-
     RAV, NOP
     / Restore 11R-13R
     FIM 0P 11
@@ -845,16 +751,7 @@ ACV, NOP
     5R -> 3R
 
     / Decrement the stack pointer by 10
-    LDM 10
-    XCH 15R
-    CLC
-    SUB 15R
-    XCH 15R
-    CMC
-    LDM 0
-    XCH 14R
-    SUB 14R
-    XCH 14R
+    7P -= 10
 
     / Restore 11-13R from the stack
     JMS POP
@@ -936,10 +833,7 @@ FNS, NOP
         / Otherwise, keep going
         KG2, NOP
         / Increment the counter by a character
-            11R 12R 13R -> 0R 1R 2R
-            CALL I12
-            CALL I12
-            0R 1R 2R -> 11R 12R 13R
+            11R 12R 13R += 2
         JUN NSL
     RFN, NOP
         / Remove cmd_end from the stack
@@ -959,7 +853,6 @@ FNS, NOP
         / Put the counter into 0R-2R and return it
         3R 4R 5R -> 0R 1R 2R
         JUN RET
-
 
 
 / FSP(cmd_start: 12, cmd_end: 12) -> space_addr: 12 - Find the first space.
@@ -1147,16 +1040,8 @@ CSU, NOP
         JCN 1100B DTL
         JUN CRT
         / Decrement len
-        DTL, LDM 1
-        XCH 7R
-        CLC
-        SUB 7R
-        XCH 7R
-        LDM 0
-        XCH 6R
-        CMC
-        SUB 6R
-        XCH 6R
+        DTL, NOP
+        6R 7R -= 1
 
         CPC, NOP
         / Load the DRAM character into 5P
@@ -1168,16 +1053,7 @@ CSU, NOP
             RDM
             XCH 10R
             / Increment the DRAM address
-            LDM 1
-            CLC
-            ADD 2R
-            XCH 2R
-            TCC
-            ADD 1R
-            XCH 1R
-            TCC
-            ADD 0R
-            XCH 0R
+            0R 1R 2R += 1
             / Second nibble
             LD 0R
             DCL
@@ -1186,16 +1062,7 @@ CSU, NOP
             RDM
             XCH 11R
             / Increment the DRAM address
-            LDM 1
-            CLC
-            ADD 2R
-            XCH 2R
-            TCC
-            ADD 1R
-            XCH 1R
-            TCC
-            ADD 0R
-            XCH 0R
+            0R 1R 2R += 1
 
         / Load the PRAM character into 6P
             / Clear write enable
@@ -1224,16 +1091,7 @@ CSU, NOP
             RDR
             XCH 13R
             / Increment the PRAM address
-            LDM 1
-            CLC
-            ADD 5R
-            XCH 5R
-            TCC
-            ADD 4R
-            XCH 4R
-            TCC
-            ADD 3R
-            XCH 3R
+            3R 4R 5R += 1
 
         / If the first nibbles aren't equal, return false
         CN1, LD 10R
@@ -1273,36 +1131,13 @@ CSU, NOP
 
 
 / Increment a 12-bit number - I12(num: 12) -> plus_1: 12
-I12, LDM 1
-    CLC
-    ADD 2R
-    XCH 2R
-    TCC
-    ADD 1R
-    XCH 1R
-    TCC
-    ADD 0R
-    XCH 0R
+I12, NOP
+    0R 1R 2R += 1
     JUN RET
 
 / Decrement a 12-bit number - D12(num: 12) -> minus_1: 12
 D12, CLC
-    1 -> 3R
-    0 -> 4R
-    / Lower 4 bits
-    LD 2R
-    SUB 3R
-    XCH 2R
-    / Middle 4 bits
-    CMC
-    LD 1R
-    SUB 4R
-    XCH 1R
-    / Upper 4 bits
-    CMC
-    LD 0R
-    SUB 4R
-    XCH 0R
+    0R 1R 2R -= 1
     JUN RET
 
 / Compare characters (8 bits) - CMP(char1: 8, char2: 8) -> same: 4
@@ -1475,16 +1310,7 @@ RET, NOP
         / Get the first nibble of the address to jump to, from the stack into 0R
             / Put the stack pointer minus 4 into 4P
             7P -> 4P
-            LDM 4
-            XCH 9R
-            CLC
-            SUB 9R
-            XCH 9R
-            LDM 0
-            XCH 8R
-            CMC
-            SUB 8R
-            XCH 8R
+            4P -= 4
             / Put the first nibble of the address to jump to into 0R
             LDM 0
             DCL
@@ -1508,16 +1334,7 @@ RET, NOP
         / Get the second nibble of the address to jump to, from the stack into 0R
             / Put the stack pointer minus 3 into 4P
             7P -> 4P
-            LDM 3
-            XCH 9R
-            CLC
-            SUB 9R
-            XCH 9R
-            LDM 0
-            XCH 8R
-            CMC
-            SUB 8R
-            XCH 8R
+            4P -= 3
             / Put the second nibble of the address to jump to into 0R
             LDM 0
             DCL
@@ -1541,16 +1358,7 @@ RET, NOP
         / Get the third nibble of the address to jump to, from the stack into 0R
             / Put the stack pointer minus 2 into 4P
             7P -> 4P
-            LDM 2
-            XCH 9R
-            CLC
-            SUB 9R
-            XCH 9R
-            LDM 0
-            XCH 8R
-            CMC
-            SUB 8R
-            XCH 8R
+            4P -= 2
             / Put the third nibble of the address to jump to into 0R
             LDM 0
             DCL

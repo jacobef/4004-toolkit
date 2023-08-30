@@ -9,6 +9,7 @@ from binary_utils import *
 from string import ascii_lowercase
 from dataclasses import dataclass
 import math
+from enum import Enum
 
 from log import debug_log
 
@@ -106,7 +107,8 @@ class Expression:
             case [ET.NUM, _]:
                 raise Exception(f"Subtracting a {other.type} from a number makes no sense")
             case _:
-                raise AssertionError(f"Expression.__add__ failed to account for the case {[self.type, other.type]}; this should never happen")
+                raise AssertionError(
+                    f"Expression.__add__ failed to account for the case {[self.type, other.type]}; this should never happen")
 
         if self.as_int - other.as_int < 0:
             raise Exception(f"The subtraction result of {self.as_int}-{other.as_int} is negative")
@@ -162,10 +164,14 @@ def get_labels_to_addrs(code: list[str]) -> dict[str, Expression]:
     labels_to_addrs: dict[str, Expression] = {}
     pseudo_pc = 0
     for line in code:
-        if is_assignment(line):
+        if "=" in line.split(" "):
             continue
         elif "->" in line.split(" "):
             pseudo_pc += size_of_arrow_macro(line, pseudo_pc)
+        elif "+=" in line.split(" "):
+            pseudo_pc += size_of_increasement_macro(line, pseudo_pc)
+        elif "-=" in line.split(" "):
+            pseudo_pc += size_of_decreasement_macro(line, pseudo_pc)
         else:
             label, mnemonic, args = get_label_mnemonic_args(line)
             if label:
@@ -218,11 +224,15 @@ def get_char_expr_ord(expr: str) -> int:
     elif inner_char == r"\t":
         return ord("\t")
     elif inner_char[0] == "\\" and len(inner_char) > 1:
-        raise ValueError(f"Unrecognizedescape sequence \"{inner_char}\" in character expression")
+        raise ValueError(f"Unrecognized escape sequence \"{inner_char}\" in character expression")
     elif len(inner_char) > 1:
         raise ValueError(f"Character expression \"{expr}\" has more than one character")
     else:
         return ord(inner_char)
+
+
+class LabelNotFound(Exception):
+    pass
 
 
 def str_to_expr(arg: str, pc: int, labels_to_values: dict[str, Expression] | None = None) -> Expression:
@@ -240,7 +250,7 @@ def str_to_expr(arg: str, pc: int, labels_to_values: dict[str, Expression] | Non
     elif arg[0] not in "1234567890" and labels_to_values:
         return labels_to_values[arg]
     elif arg[0] not in "1234567890":
-        raise ValueError(
+        raise LabelNotFound(
             f"Invalid expression \"{arg}\" (might be a label, but function was called without labels_to_values)")
     elif arg[-1] == "B":
         as_int = int(arg[:-1], 2)
@@ -305,59 +315,152 @@ def n_nibbles(exprs: list[str]):
 
 def size_of_arrow_macro(line: str, pc: int) -> int:
     result = 0
-    for expr_str in line.split("->")[1].strip().split(" "):
-        expr = str_to_expr(expr_str, pc)
+    for expr in split_into_expr_lists(line, "->", pc)[1]:
         if expr.as_int is None:
-            pass
+            pass  # placeholders won't add extra instructions
         elif expr.type == ExprTypes.REG:
-            result += 2
+            result += 2  # LDM, XCH
         elif expr.type == ExprTypes.REG_PAIR:
-            result += 4
+            result += 4  # LDM, XCH, LDM, XCH
+    return result
+
+
+def size_of_increasement_macro(line: str, pc: int) -> int:
+    to_increase, _ = split_into_expr_lists(line, "+=", pc)
+    to_increase_category, _ = analyze_exprs(to_increase)
+    assert to_increase_category == ExprCategory.REGS, "Invalid expression category"
+    return 3 * len(convert_to_regs(to_increase)) + 1  # CLC at the start, then LDM, ADD, XCH for each register
+
+
+def size_of_decreasement_macro(line: str, pc: int) -> int:
+    to_decrease, _ = split_into_expr_lists(line, "-=", pc)
+    to_decrease_category, _ = analyze_exprs(to_decrease)
+    assert to_decrease_category == ExprCategory.REGS, "Invalid expression category"
+    return 5 * len(convert_to_regs(to_decrease)) + 1 - 1  # CLC at the start, then LDM, XCH, SUB, XCH, CMC for each register, except no CMC at the end
+
+
+def split_into_expr_lists(line: str, delimeter: str, pc: int, labels_to_values: dict[str, Expression] | None = None) -> \
+tuple[list[Expression], list[Expression]]:
+    # worst thing I have ever written
+    try:
+        first = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in
+                 line.split(delimeter)[0].strip().split(" ")]
+    except LabelNotFound:
+        first = None
+    try:
+        second = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in
+                  line.split(delimeter)[1].strip().split(" ")]
+    except LabelNotFound:
+        second = None
+    return first, second
+
+
+def expand_increasement_macro(line: str, pc: int, labels_to_values: dict[str, Expression]) -> list[str]:
+    to_increase, increase_by = split_into_expr_lists(line, "+=", pc, labels_to_values)
+    to_increase_category, _ = analyze_exprs(to_increase)
+    increase_by_category, increment_value = analyze_exprs(increase_by)
+    if to_increase_category != ExprCategory.REGS or increase_by_category != ExprCategory.NUM or increment_value is None:
+        raise Exception(f"Invalid expression categories for {line}")
+    regs_to_increase = convert_to_regs(to_increase)
+
+    assembly_instructions = []
+    increment_binary = format(increment_value, f'0{4 * len(to_increase)}b').zfill(4 * len(regs_to_increase))
+    assembly_instructions.append("CLC")
+    for reg, nibble in zip(reversed(regs_to_increase), reversed(wrap(increment_binary, 4))):
+        assembly_instructions.append(f"LDM {nibble}B")
+        assembly_instructions.append(f"ADD {reg}R")
+        assembly_instructions.append(f"XCH {reg}R")
+
+    return assembly_instructions
+
+
+def expand_decreasement_macro(line: str, pc: int, labels_to_values: dict[str, Expression]) -> list[str]:
+    to_increase, increase_by = split_into_expr_lists(line, "-=", pc, labels_to_values)
+    to_increase_category, _ = analyze_exprs(to_increase)
+    increase_by_category, increment_value = analyze_exprs(increase_by)
+    if to_increase_category != ExprCategory.REGS or increase_by_category != ExprCategory.NUM or increment_value is None:
+        raise Exception(f"Invalid expression categories for {line}")
+    regs_to_increase = convert_to_regs(to_increase)
+
+    assembly_instructions = []
+    increment_binary = format(increment_value, f'0{4 * len(to_increase)}b').zfill(4 * len(regs_to_increase))
+    assembly_instructions.append("CLC")
+    for reg, nibble in zip(reversed(regs_to_increase), reversed(wrap(increment_binary, 4))):
+        assembly_instructions.append(f"LDM {nibble}B")
+        assembly_instructions.append(f"XCH {reg}R")
+        assembly_instructions.append(f"SUB {reg}R")
+        assembly_instructions.append(f"XCH {reg}R")
+        assembly_instructions.append("CMC")
+
+    return assembly_instructions[:-1]
+
+
+class ExprCategory(Enum):
+    REGS = "Registers and/or Register Pairs"
+    NUM = "Single Number"
+    OTHER = "Other"
+
+
+def analyze_exprs(exprs: list[Expression]) -> tuple[ExprCategory, int | None]:
+    if len(exprs) == 1 and exprs[0].type not in [ExprTypes.REG, ExprTypes.REG_PAIR]:
+        return ExprCategory.NUM, exprs[0].as_int
+    elif all(expr.type in [ExprTypes.REG, ExprTypes.REG_PAIR] for expr in exprs):
+        return ExprCategory.REGS, None
+    else:
+        return ExprCategory.OTHER, None
+
+
+def convert_to_regs(exprs: list[Expression]) -> list[int | None]:
+    regs: list[int | None] = []
+    for expr in exprs:
+        if expr.type == ExprTypes.REG_PAIR:
+            regs.append(expr.as_int * 2)
+            regs.append(expr.as_int * 2 + 1)
+        elif expr.type == ExprTypes.REG:
+            regs.append(expr.as_int)
+        else:
+            raise ValueError("Expression must represent registers or register pairs")
+    return regs
+
+
+def expand_num_to_regs(in_num: int, out_regs: list[int]) -> list[str]:
+    result = []
+    num_bin = int_to_binary(in_num, n_digits=len(out_regs) * 4)
+    in_nibbles = wrap(binary_to_string(num_bin), 4)
+    for nibble, reg in zip(in_nibbles, out_regs):
+        if reg is not None:
+            result.append(f"LDM {nibble}B")
+            result.append(f"XCH {reg}R")
+    return result
+
+
+def expand_regs_to_regs(in_regs: list[int | None], out_regs: list[int]) -> list[str]:
+    result = []
+    assert len(in_regs) == len(in_regs), "In and out sizes don't match"
+    for in_reg, out_reg in zip(in_regs, out_regs):
+        if out_reg is not None:
+            result.append(f"LD {in_reg}R")
+            result.append(f"XCH {out_reg}R")
     return result
 
 
 def expand_arrow_macro(line: str, pc: int, labels_to_values: dict[str, Expression]) -> list[str]:
-    in_exprs: list[Expression] = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in line.split("->")[0].strip().split(" ")]
-    in_num: int | None = None
-    in_regs: list[int | None] = []
-    for expr in in_exprs:
-        if expr.type == ExprTypes.REG_PAIR:
-            in_regs.append(expr.as_int*2)
-            in_regs.append(expr.as_int*2 + 1)
-        elif expr.type == ExprTypes.REG:
-            in_regs.append(expr.as_int)
-        else:
-            assert len(in_exprs) == 1, "In number must stand alone"
-            in_num = expr.as_int
-    out_exprs: list[Expression] = [str_to_expr(expr_str, pc, labels_to_values) for expr_str in line.split("->")[1].strip().split(" ")]
-    out_regs: list[int] = []
-    for expr in out_exprs:
-        if expr.type == ExprTypes.REG_PAIR:
-            out_regs.append(expr.as_int*2)
-            out_regs.append(expr.as_int*2 + 1)
-        elif expr.type == ExprTypes.REG:
-            out_regs.append(expr.as_int)
-        else:
-            raise ValueError("The out part of an arrow expression must only contain registers and register pairs")
+    in_exprs, out_exprs = split_into_expr_lists(line, "->", pc, labels_to_values)
+    in_type, in_num = analyze_exprs(in_exprs)
+    out_type, _ = analyze_exprs(out_exprs)
 
-    assert all(expr not in out_exprs for expr in in_exprs), "In and out can't overlap"
-    result = []
-    if in_num is not None:
-        num_bin = int_to_binary(in_num, n_digits=len(out_regs)*4)
-        in_nibbles = wrap(binary_to_string(num_bin), 4)
-        for nibble, reg in zip(in_nibbles, out_regs):
-            if reg is not None:
-                result.append(f"LDM {nibble}B")
-                result.append(f"XCH {reg}R")
-    elif len(in_regs) != 0:
-        assert len(in_regs) == len(in_regs), "In and out sizes don't match"
-        for in_reg, out_reg in zip(in_regs, out_regs):
-            if out_reg is not None:
-                result.append(f"LD {in_reg}R")
-                result.append(f"XCH {out_reg}R")
+    if in_type == ExprCategory.OTHER or out_type != ExprCategory.REGS:
+        raise ValueError(f"Invalid expressions in arrow macro \"{line}\" (in_type={in_type}, out_type={out_type})")
+
+    out_regs = convert_to_regs(out_exprs)
+
+    if in_type == ExprCategory.NUM:
+        return expand_num_to_regs(in_num, out_regs)
+    elif in_type == ExprCategory.REGS:
+        in_regs = convert_to_regs(in_exprs)
+        return expand_regs_to_regs(in_regs, out_regs)
     else:
-        raise Exception("in_num isn't set and in_regs is empty; this should never happen")
-    return result
+        raise Exception("Unexpected expression type; this should never happen")
 
 
 def assemble(filename: str) -> bytearray:
@@ -369,7 +472,6 @@ def assemble(filename: str) -> bytearray:
     for line in code_cleaned:
         if len(line.split(" ")) == 2 and line.split(" ")[0] == "CALL":
             for line2 in f"""
-
 / Push the first nibble of the return address
 *+14 -> 8R _ _
 JMS P8R
@@ -396,11 +498,19 @@ JUN {line.split(" ")[1]}
     out = ""
 
     for line in code_calls_expanded:
-        if is_assignment(line):
+        if "=" in line.split(" "):
             label, value = eval_assignment(line, len(out) // 8, labels_to_values)
             labels_to_values[label] = value
         elif "->" in line.split(" "):
             macro_expanded = expand_arrow_macro(line, len(out) // 8, labels_to_values)
+            for expanded_line in macro_expanded:
+                out += assemble_line(expanded_line, len(out) // 8)
+        elif "+=" in line.split(" "):
+            macro_expanded = expand_increasement_macro(line, len(out) // 8, labels_to_values)
+            for expanded_line in macro_expanded:
+                out += assemble_line(expanded_line, len(out) // 8)
+        elif "-=" in line.split(" "):
+            macro_expanded = expand_decreasement_macro(line, len(out) // 8, labels_to_values)
             for expanded_line in macro_expanded:
                 out += assemble_line(expanded_line, len(out) // 8)
         else:
