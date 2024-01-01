@@ -297,16 +297,7 @@ MLC, NOP
     RDM
     XCH 2R
     / Add argument to end pointer, store result in 3R-5R
-    LD 2R
-    CLC
-    ADD 5R
-    XCH 5R
-    LD 1R
-    ADD 4R
-    XCH 4R
-    LD 0R
-    ADD 3R
-    XCH 3R
+    3R 4R 5R += 0R 1R 2R
     / Crash if there's an overflow
     JCN 1010B WEP
     JUN MOF
@@ -454,8 +445,8 @@ FPA, LDM 0
 / Does not clobber any registers except 0P (and 7P)
 BPK, NOP
     / Subtract the argument from the stack pointer and store it in 0P
-    LD 15R
     CLC
+    LD 15R
     SUB 1R
     XCH 1R
     CMC
@@ -517,8 +508,6 @@ POP, NOP
     RDM
     XCH 0R
     BBL 0
-
-PRT,
 
 / ECO(first_space: 12, cmd_end: 12) - Print the argument
 ECO, NOP
@@ -624,8 +613,8 @@ ACV, NOP
     0 -> 0R
     JMS PSH / 6
 
+    / Allocate memory for argv, and save its address to the stack and 0R-2R
     96 -> 0R 1R 2R
-    / Save the address of argv to the stack and 0R-2R
     CALL MLC
     JMS PHA / 7 8 9
     FIM 0P 3

@@ -66,7 +66,8 @@ def main():
     f.write(machine_code)
     f.close()
     cpu = Intel4004(setup_ports())
-
+    # load_machine_code(cpu, machine_code)
+    # start_debug(cpu)
     keyboard = Keyboard(char_lines=(*(cpu.memory.rom_ports[0].lines[1:]), *(cpu.memory.rom_ports[1].lines)),
                         char_ready_line=cpu.memory.rom_ports[2].lines[3],
                         done_receiving_line=cpu.memory.rom_ports[3].lines[3])

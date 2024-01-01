@@ -329,14 +329,27 @@ def size_of_increasement_macro(line: str, pc: int) -> int:
     to_increase, _ = split_into_expr_lists(line, "+=", pc)
     to_increase_category, _ = analyze_exprs(to_increase)
     assert to_increase_category == ExprCategory.REGS, "Invalid expression category"
-    return 3 * len(convert_to_regs(to_increase)) + 1  # CLC at the start, then LDM, ADD, XCH for each register
+    return 3 * len(convert_to_regs(to_increase)) + 1  # CLC at the start, then LDM/LD, ADD, XCH for each register
 
 
 def size_of_decreasement_macro(line: str, pc: int) -> int:
-    to_decrease, _ = split_into_expr_lists(line, "-=", pc)
+    to_decrease, decrease_by = split_into_expr_lists(line, "-=", pc)
     to_decrease_category, _ = analyze_exprs(to_decrease)
+    decrease_by_category, _ = analyze_exprs(decrease_by)
+
     assert to_decrease_category == ExprCategory.REGS, "Invalid expression category"
-    return 5 * len(convert_to_regs(to_decrease)) + 1 - 1  # CLC at the start, then LDM, XCH, SUB, XCH, CMC for each register, except no CMC at the end
+
+    num_regs_to_decrease = len(convert_to_regs(to_decrease))
+
+    # Depending on whether numbers or registers are used for `decrease_by`, the size varies
+    if decrease_by_category == ExprCategory.NUM:
+        # CLC at the start, then LDM, XCH, SUB, XCH, CMC for each register, except no CMC at the end
+        return 5 * num_regs_to_decrease + 1 - 1
+    elif decrease_by_category == ExprCategory.REGS:
+        # CLC at the start, then LD, SUB, XCH, CMC for each register, except no CMC at the end
+        return 4 * num_regs_to_decrease + 1 - 1
+    else:
+        raise Exception("Invalid expression category for decrease_by")
 
 
 def split_into_expr_lists(line: str, delimeter: str, pc: int, labels_to_values: dict[str, Expression] | None = None) -> \
@@ -359,40 +372,62 @@ def expand_increasement_macro(line: str, pc: int, labels_to_values: dict[str, Ex
     to_increase, increase_by = split_into_expr_lists(line, "+=", pc, labels_to_values)
     to_increase_category, _ = analyze_exprs(to_increase)
     increase_by_category, increment_value = analyze_exprs(increase_by)
-    if to_increase_category != ExprCategory.REGS or increase_by_category != ExprCategory.NUM or increment_value is None:
-        raise Exception(f"Invalid expression categories for {line}")
+    if to_increase_category != ExprCategory.REGS:
+        raise Exception(f"Thing to increase must be a list of registers and/or register pairs. Error on {line}")
     regs_to_increase = convert_to_regs(to_increase)
 
-    assembly_instructions = []
-    increment_binary = format(increment_value, f'0{4 * len(to_increase)}b').zfill(4 * len(regs_to_increase))
-    assembly_instructions.append("CLC")
-    for reg, nibble in zip(reversed(regs_to_increase), reversed(wrap(increment_binary, 4))):
-        assembly_instructions.append(f"LDM {nibble}B")
-        assembly_instructions.append(f"ADD {reg}R")
-        assembly_instructions.append(f"XCH {reg}R")
-
-    return assembly_instructions
+    asm_instrs = ["CLC"]
+    if increase_by_category == ExprCategory.NUM:
+        increment_binary = format(increment_value, f'0{4 * len(to_increase)}b').zfill(4 * len(regs_to_increase))
+        for reg, nibble in zip(reversed(regs_to_increase), reversed(wrap(increment_binary, 4))):
+            asm_instrs.append(f"LDM {nibble}B")
+            asm_instrs.append(f"ADD {reg}R")
+            asm_instrs.append(f"XCH {reg}R")
+    elif increase_by_category == ExprCategory.REGS:
+        regs_to_inc_by = convert_to_regs(increase_by)
+        assert len(regs_to_increase) == len(regs_to_inc_by)
+        assert(reg is not None for reg in regs_to_inc_by)
+        for reg_to_inc, reg_to_inc_by in zip(reversed(regs_to_increase), reversed(regs_to_inc_by)):
+            asm_instrs.append(f"LD {reg_to_inc_by}R")
+            asm_instrs.append(f"ADD {reg_to_inc}R")
+            asm_instrs.append(f"XCH {reg_to_inc}R")
+    else:
+        raise Exception("Thing to increase by must be a number, or a list of regsiters/register pairs")
+    return asm_instrs
 
 
 def expand_decreasement_macro(line: str, pc: int, labels_to_values: dict[str, Expression]) -> list[str]:
-    to_increase, increase_by = split_into_expr_lists(line, "-=", pc, labels_to_values)
-    to_increase_category, _ = analyze_exprs(to_increase)
-    increase_by_category, increment_value = analyze_exprs(increase_by)
-    if to_increase_category != ExprCategory.REGS or increase_by_category != ExprCategory.NUM or increment_value is None:
-        raise Exception(f"Invalid expression categories for {line}")
-    regs_to_increase = convert_to_regs(to_increase)
+    to_decrease, decrease_by = split_into_expr_lists(line, "-=", pc, labels_to_values)
+    to_decrease_category, _ = analyze_exprs(to_decrease)
+    decrease_by_category, decrement_value = analyze_exprs(decrease_by)
 
-    assembly_instructions = []
-    increment_binary = format(increment_value, f'0{4 * len(to_increase)}b').zfill(4 * len(regs_to_increase))
-    assembly_instructions.append("CLC")
-    for reg, nibble in zip(reversed(regs_to_increase), reversed(wrap(increment_binary, 4))):
-        assembly_instructions.append(f"LDM {nibble}B")
-        assembly_instructions.append(f"XCH {reg}R")
-        assembly_instructions.append(f"SUB {reg}R")
-        assembly_instructions.append(f"XCH {reg}R")
-        assembly_instructions.append("CMC")
+    if to_decrease_category != ExprCategory.REGS:
+        raise Exception(f"Thing to decrease must be a list of registers and/or register pairs. Error on {line}")
 
-    return assembly_instructions[:-1]
+    regs_to_decrease = convert_to_regs(to_decrease)
+
+    asm_instrs = ["CLC"]
+    if decrease_by_category == ExprCategory.NUM:
+        decrement_binary = format(decrement_value, f'0{4 * len(to_decrease)}b').zfill(4 * len(regs_to_decrease))
+        for reg, nibble in zip(reversed(regs_to_decrease), reversed(wrap(decrement_binary, 4))):
+            asm_instrs.append(f"LDM {nibble}B")
+            asm_instrs.append(f"XCH {reg}R")
+            asm_instrs.append(f"SUB {reg}R")
+            asm_instrs.append(f"XCH {reg}R")
+            asm_instrs.append("CMC")
+    elif decrease_by_category == ExprCategory.REGS:
+        regs_to_dec_by = convert_to_regs(decrease_by)
+        assert len(regs_to_decrease) == len(regs_to_dec_by)
+        assert (reg is not None for reg in regs_to_dec_by)
+        for reg_to_dec, reg_to_dec_by in zip(reversed(regs_to_decrease), reversed(regs_to_dec_by)):
+            asm_instrs.append(f"LD {reg_to_dec}R")
+            asm_instrs.append(f"SUB {reg_to_dec_by}R")
+            asm_instrs.append(f"XCH {reg_to_dec}R")
+            asm_instrs.append("CMC")
+    else:
+        raise Exception("Thing to decrease by must be a number, or a list of registers/register pairs")
+
+    return asm_instrs[:-1]  # Remove the last CMC
 
 
 class ExprCategory(Enum):
