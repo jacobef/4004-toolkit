@@ -20,7 +20,7 @@ class Monitor:
         self.done_displaying_line = done_displaying_line
         self.done_displaying_cache = done_displaying_line.status
 
-        self.conn = Client(("localhost", 6000))
+        self.conn = Client(("localhost", 6001))
 
     def turn_on(self):
         while True:

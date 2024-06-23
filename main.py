@@ -1,6 +1,6 @@
 import subprocess
 import time
 
-subprocess.Popen(["python3.11", "monitor_monitor.py"])
+subprocess.Popen(["venv/bin/python", "monitor_monitor.py"])
 time.sleep(0.2)
-subprocess.call(["python3.11", "everything_else_driver.py"], stdout=subprocess.DEVNULL)
+subprocess.call(["venv/bin/python", "everything_else_driver.py"], stdout=subprocess.DEVNULL)
