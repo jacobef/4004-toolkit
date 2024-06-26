@@ -24,6 +24,17 @@ pub const Intel4004 = struct {
         return self.stack_registers[self.stack_pointer];
     }
 
+    pub fn getRegisterPair(self: Intel4004, pair: u3) u8 {
+        const reg1_val: u8 = @intCast(self.index_registers[pair * 2]);
+        const reg2_val: u8 = @intCast(self.index_registers[pair * 2 + 1]);
+        return (reg1_val << 4) | reg2_val;
+    }
+
+    pub fn setRegisterPair(self: *Intel4004, pair: u3, val: u8) void {
+        self.index_registers[pair * 2] = @intCast(val >> 4);
+        self.index_registers[pair * 2 + 1] = @intCast(val & 0xF);
+    }
+
     pub fn reset(self: *Intel4004) void {
         self.* = std.mem.zeroes(Intel4004);
     }
@@ -41,15 +52,14 @@ pub const Intel4004 = struct {
         ports: [16][4]IOLine,
     };
 
-    pub const ExecutionError = error{IllegalInstructionError};
+    const ExecutionError = error{illegal_instruction_error};
 
     const clock_speed_hz: u64 = 740_000;
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
-        // Original single_step code
         const byte1 = self.pram.bytes[self.program_counter];
-        const inst_spec = instructions.getInstructionSpec(byte1) orelse return ExecutionError.IllegalInstructionError;
+        const inst_spec = instructions.getInstructionSpec(byte1) orelse return ExecutionError.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
         const byte2 = if (n_bytes == 2) self.pram.bytes[self.program_counter + 1] else null;
         self.program_counter +%= @intCast(n_bytes);

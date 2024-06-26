@@ -85,11 +85,26 @@ pub const instructions = struct {
         cpu.index_registers[reg] +%= 1;
     }
 
+    fn execute_fin(cpu: *Intel4004, pair: u3) void {
+        cpu.setRegisterPair(pair, cpu.pram.bytes[(cpu.program_counter & 0xF00) | cpu.getRegisterPair(0)]);
+    }
+
+    fn add_helper(num1: u4, num2: u4, carry_bit: u1) struct { u4, u1 } {
+        const result_before_carry = @addWithOverflow(num1, num2);
+        const result = @addWithOverflow(result_before_carry[0], carry_bit);
+        return .{ result[0], result_before_carry[1] | result[1] };
+    }
+
     fn execute_add(cpu: *Intel4004, reg: u4) void {
-        const result_before_carry = @addWithOverflow(cpu.index_registers[reg], cpu.accumulator);
-        const result = @addWithOverflow(result_before_carry[0], cpu.carry_bit);
+        const result = add_helper(cpu.accumulator, cpu.index_registers[reg], cpu.carry_bit);
         cpu.accumulator = result[0];
-        cpu.carry_bit = result_before_carry[1] | result[1];
+        cpu.carry_bit = result[1];
+    }
+
+    fn execute_sub(cpu: *Intel4004, reg: u4) void {
+        const result = add_helper(cpu.accumulator, ~cpu.index_registers[reg], ~cpu.carry_bit);
+        cpu.accumulator = result[0];
+        cpu.carry_bit = result[1];
     }
 
     fn execute_ld(cpu: *Intel4004, reg: u4) void {
@@ -102,6 +117,76 @@ pub const instructions = struct {
         cpu.index_registers[reg] = old_accumulator;
     }
 
+    fn execute_clb(cpu: *Intel4004) void {
+        cpu.accumulator = 0;
+        cpu.carry_bit = 0;
+    }
+
+    fn execute_clc(cpu: *Intel4004) void {
+        cpu.carry_bit = 0;
+    }
+
+    fn execute_iac(cpu: *Intel4004) void {
+        cpu.accumulator +%= 1;
+    }
+
+    fn execute_cmc(cpu: *Intel4004) void {
+        cpu.carry_bit = ~cpu.carry_bit;
+    }
+
+    fn execute_cma(cpu: *Intel4004) void {
+        cpu.accumulator = ~cpu.accumulator;
+    }
+
+    fn execute_ral(cpu: *Intel4004) void {
+        const result = @shlWithOverflow(cpu.accumulator, 1);
+        cpu.accumulator = result[0] | cpu.carry_bit;
+        cpu.carry_bit = result[1];
+    }
+
+    fn execute_rar(cpu: *Intel4004) void {
+        const acc_low_bit: u1 = @intCast(cpu.accumulator & 0x1);
+        cpu.accumulator = (cpu.accumulator >> 1) | (@as(u4, cpu.carry_bit) << 3);
+        cpu.carry_bit = acc_low_bit;
+    }
+
+    fn execute_tcc(cpu: *Intel4004) void {
+        cpu.accumulator = cpu.carry_bit;
+        cpu.carry_bit = 0;
+    }
+
+    fn execute_dac(cpu: *Intel4004) void {
+        cpu.accumulator -%= 1;
+    }
+
+    fn execute_tcs(cpu: *Intel4004) void {
+        cpu.accumulator = if (cpu.carry_bit == 0) 9 else 10;
+        cpu.carry_bit = 0;
+    }
+
+    fn execute_stc(cpu: *Intel4004) void {
+        cpu.carry_bit = 1;
+    }
+
+    fn execute_daa(cpu: *Intel4004) void {
+        if (cpu.accumulator > 9 or cpu.carry_bit == 1) {
+            const result = @addWithOverflow(cpu.accumulator, 6);
+            cpu.accumulator = result[0];
+            if (result[1] == 1) {
+                cpu.carry_bit = 1;
+            }
+        }
+    }
+
+    fn execute_kbp(cpu: *Intel4004) void {
+        const lookup = [16]u4{ 0b0000, 0b0001, 0b0010, 0b0011, 0b0100, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111, 0b1111 };
+        cpu.accumulator = lookup[cpu.accumulator];
+    }
+
+    fn execute_fim(cpu: *Intel4004, pair: u3, val: u8) void {
+        cpu.setRegisterPair(pair, val);
+    }
+
     fn execute_ldm(cpu: *Intel4004, val: u4) void {
         cpu.accumulator = val;
     }
@@ -109,31 +194,32 @@ pub const instructions = struct {
     pub const all = [_]InstructionSpec{
         ins("NOP", "00000000", execute_nop),
         ins("INC", "0110rrrr", execute_inc),
+        ins("FIN", "0011ppp0", execute_fin),
         ins("ADD", "1000rrrr", execute_add),
+        ins("SUB", "1001rrrr", execute_sub),
         ins("LD", "1010rrrr", execute_ld),
         ins("XCH", "1011rrrr", execute_xch),
+        ins("CLB", "11110000", execute_clb),
+        ins("CLC", "11110001", execute_clc),
+        ins("IAC", "11110010", execute_iac),
+        ins("CMC", "11110011", execute_cmc),
+        ins("CMA", "11110100", execute_cma),
+        ins("RAL", "11110101", execute_ral),
+        ins("RAR", "11110110", execute_rar),
+        ins("TCC", "11110111", execute_tcc),
+        ins("DAC", "11111000", execute_dac),
+        ins("TCS", "11111001", execute_tcs),
+        ins("STC", "11111010", execute_stc),
+        ins("DAA", "11111011", execute_daa),
+        ins("KBP", "11111100", execute_kbp),
+        ins("FIM", "0010ppp0nnnnnnnn", execute_fim),
         ins("LDM", "1101nnnn", execute_ldm),
-        // ins("SUB", "1001rrrr", execute_sub),
-        // ins("IAC", "11110010", execute_iac),
-        // ins("DAC", "11111000", execute_dac),
-        // ins("CLB", "11110000", execute_clb),
-        // ins("CLC", "11110001", execute_clc),
-        // ins("TCC", "11110111", execute_tcc),
-        // ins("CMC", "11110011", execute_cmc),
         // ins("BBL", "1100nnnn", execute_bbl),
         // ins("JMS", "0101aaaaaaaaaaaa", execute_jms),
         // ins("JUN", "0100aaaaaaaaaaaa", execute_jun),
         // ins("JIN", "0011ppp1", execute_jin),
-        // ins("FIM", "0010ppp0nnnnnnnn", execute_fim),
-        // ins("FIN", "0011ppp0", execute_fin),
         // ins("JCN", "0001ccccaaaaaaaa", execute_jcn),
-        // ins("DAA", "11111011", execute_daa),
-        // ins("CMA", "11110100", execute_cma),
-        // ins("RAL", "11110101", execute_ral),
-        // ins("RAR", "11110110", execute_rar),
-        // ins("KBP", "11111100", execute_kbp),
-        // ins("STC", "11111010", execute_stc),
-        // ins("TCS", "11111001", execute_tcs),
+
         // ins("ISZ", "0111rrrraaaaaaaa", execute_isz),
         // ins("DCL", "11111101", execute_dcl),
         // ins("SRC", "0010ppp1", execute_src),
@@ -162,9 +248,9 @@ fn addItem(comptime T: type, comptime list: []const T, comptime item: T) []const
     return list ++ @as([]const T, &.{item});
 }
 
-pub fn splitOpcode(comptime opcode: []const u8) OpcodeParseError![]const []const u8 {
+pub fn splitOpcode(comptime opcode: []const u8) ![]const []const u8 {
     comptime {
-        if (opcode.len != 8 and opcode.len != 16) return .invalid_opcode_length;
+        if (opcode.len != 8 and opcode.len != 16) return OpcodeParseError.invalid_opcode_length;
 
         var opcode_split: []const []const u8 = &.{};
 

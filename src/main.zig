@@ -10,10 +10,6 @@ const InstructionSpec = instructions.InstructionSpec;
 const lookup = instructions.initOpcodeLookup();
 
 pub fn main() !void {
-
-    // var allocator_factory = std.heap.GeneralPurposeAllocator(.{}){};
-    // const allocator = allocator_factory.allocator();
-
     var intel4004: Intel4004 = undefined;
     intel4004.reset();
     intel4004.pram.bytes[0] = 0b11010100;
