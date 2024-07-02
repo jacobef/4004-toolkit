@@ -21,5 +21,6 @@ pub fn main() !void {
 
     try intel4004.single_step();
     try intel4004.single_step();
+    try intel4004.single_step();
     std.debug.print("{any}", .{intel4004});
 }

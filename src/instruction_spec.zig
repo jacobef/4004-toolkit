@@ -24,6 +24,7 @@ pub const InstructionSpec = struct {
 
     fn init(mnemonic: []const u8, opcode: []const u8, func: anytype) InstructionSpec {
         comptime {
+            @setEvalBranchQuota(5000);
             const arg_extractors = getArgExtractors(opcode);
             const arg_count = arg_extractors.len;
 
@@ -198,6 +199,45 @@ pub const instructions = struct {
         cpu.accumulator = val;
     }
 
+    fn execute_jun(cpu: *Intel4004, addr: u12) void {
+        cpu.program_counter = addr;
+    }
+
+    fn execute_jin(cpu: *Intel4004, pair: u3) void {
+        cpu.program_counter = (cpu.program_counter & 0xF00) | cpu.getRegisterPair(pair);
+    }
+
+    fn execute_jcn(cpu: *Intel4004, condition: u4, addr: u8) void {
+        const test_cond = condition & 0b0001 == 1 and cpu.test_signal == 0;
+        const carry_cond = condition & 0b0010 == 1 and cpu.carry_bit == 1;
+        const acc_cond = condition & 0b0100 == 1 and cpu.accumulator == 0;
+        const invert = condition & 0b1000 == 1;
+        var should_jump = test_cond or carry_cond or acc_cond;
+        if (invert) {
+            should_jump = !should_jump;
+        }
+        if (should_jump) {
+            cpu.program_counter = (cpu.program_counter & 0xF00) | addr;
+        }
+    }
+
+    fn execute_isz(cpu: *Intel4004, reg: u4, addr: u8) void {
+        cpu.index_registers[reg] +%= 1;
+        if (cpu.index_registers[reg] != 0) {
+            cpu.program_counter = (cpu.program_counter & 0xF00) | addr;
+        }
+    }
+
+    fn execute_jms(cpu: *Intel4004, addr: u12) void {
+        cpu.pushToStack(cpu.program_counter + 2);
+        cpu.program_counter = addr;
+    }
+
+    fn execute_bbl(cpu: *Intel4004, val: u4) void {
+        cpu.accumulator = val;
+        cpu.program_counter = cpu.popFromStack();
+    }
+
     const ins = InstructionSpec.init;
     pub const all = [_]InstructionSpec{
         ins("NOP", "00000000", execute_nop),
@@ -222,14 +262,13 @@ pub const instructions = struct {
         ins("KBP", "11111100", execute_kbp),
         ins("FIM", "0010ppp0nnnnnnnn", execute_fim),
         ins("LDM", "1101nnnn", execute_ldm),
-        // ins("JMS", "0101aaaaaaaaaaaa", execute_jms),
+        ins("JUN", "0100aaaaaaaaaaaa", execute_jun),
+        ins("JIN", "0011ppp1", execute_jin),
+        ins("JCN", "0001ccccaaaaaaaa", execute_jcn),
+        ins("ISZ", "0111rrrraaaaaaaa", execute_isz),
+        ins("JMS", "0101aaaaaaaaaaaa", execute_jms),
+        ins("BBL", "1100nnnn", execute_bbl),
 
-        // ins("BBL", "1100nnnn", execute_bbl),
-        // ins("JUN", "0100aaaaaaaaaaaa", execute_jun),
-        // ins("JIN", "0011ppp1", execute_jin),
-        // ins("JCN", "0001ccccaaaaaaaa", execute_jcn),
-
-        // ins("ISZ", "0111rrrraaaaaaaa", execute_isz),
         // ins("DCL", "11111101", execute_dcl),
         // ins("SRC", "0010ppp1", execute_src),
         // ins("RDM", "11101001", execute_rdm),
