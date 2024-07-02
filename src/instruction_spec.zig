@@ -13,50 +13,54 @@ const InstructionFunction = union(enum) {
     f_4_8: *const fn (cpu: *Intel4004, arg1: u4, arg2: u8) void,
 };
 
-fn ins(mnemonic: []const u8, opcode: []const u8, func: anytype) InstructionSpec {
-    comptime {
-        const arg_extractors = getArgExtractors(opcode);
-        const arg_count = arg_extractors.len;
-
-        const func_union: InstructionFunction = switch (arg_count) {
-            0 => .{ .f_no_args = func },
-            1 => blk: {
-                const arg_bits = @popCount(arg_extractors[0].mask);
-                break :blk switch (arg_bits) {
-                    3 => .{ .f_3 = func },
-                    4 => .{ .f_4 = func },
-                    12 => .{ .f_12 = func },
-                    else => @compileError("Unsupported argument bit count"),
-                };
-            },
-            2 => blk: {
-                const arg1_bits = @popCount(arg_extractors[0].mask);
-                const arg2_bits = @popCount(arg_extractors[1].mask);
-                break :blk switch (arg1_bits) {
-                    3 => if (arg2_bits == 8) .{ .f_3_8 = func } else @compileError("Second argument must be 8 bits for f_3_8"),
-                    4 => if (arg2_bits == 8) .{ .f_4_8 = func } else @compileError("Second argument must be 8 bits for f_4_8"),
-                    else => @compileError("First argument must be 3 or 4 bits for two-argument functions"),
-                };
-            },
-            else => @compileError("Unsupported number of arguments"),
-        };
-
-        return InstructionSpec{
-            .mnemonic = mnemonic,
-            .arg_extractors = arg_extractors,
-            .opcode_string = opcode,
-            .func = func_union,
-        };
-    }
-}
+pub const OneOrTwoBytes = union(enum) { one: u8, two: u16 };
 
 pub const InstructionSpec = struct {
     mnemonic: []const u8,
     arg_extractors: []const ArgExtractor,
+    opcode_mask: u16,
     opcode_string: []const u8,
     func: InstructionFunction,
 
-    pub fn extractArgs(self: *const InstructionSpec, byte1: u8, byte2: ?u8) []const u16 {
+    fn init(mnemonic: []const u8, opcode: []const u8, func: anytype) InstructionSpec {
+        comptime {
+            const arg_extractors = getArgExtractors(opcode);
+            const arg_count = arg_extractors.len;
+
+            const func_union: InstructionFunction = switch (arg_count) {
+                0 => .{ .f_no_args = func },
+                1 => blk: {
+                    const arg_bits = @popCount(arg_extractors[0].mask);
+                    break :blk switch (arg_bits) {
+                        3 => .{ .f_3 = func },
+                        4 => .{ .f_4 = func },
+                        12 => .{ .f_12 = func },
+                        else => @compileError("Unsupported argument bit count"),
+                    };
+                },
+                2 => blk: {
+                    const arg1_bits = @popCount(arg_extractors[0].mask);
+                    const arg2_bits = @popCount(arg_extractors[1].mask);
+                    break :blk switch (arg1_bits) {
+                        3 => if (arg2_bits == 8) .{ .f_3_8 = func } else @compileError("Second argument must be 8 bits for f_3_8"),
+                        4 => if (arg2_bits == 8) .{ .f_4_8 = func } else @compileError("Second argument must be 8 bits for f_4_8"),
+                        else => @compileError("First argument must be 3 or 4 bits for two-argument functions"),
+                    };
+                },
+                else => @compileError("Unsupported number of arguments"),
+            };
+
+            return InstructionSpec{
+                .mnemonic = mnemonic,
+                .arg_extractors = arg_extractors,
+                .opcode_mask = getOpcodeMask(opcode),
+                .opcode_string = opcode,
+                .func = func_union,
+            };
+        }
+    }
+
+    pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8) []const u16 {
         const opcode: u16 =
             if (byte2) |b2|
             (@as(u16, byte1) << 8) | @as(u16, b2)
@@ -64,8 +68,7 @@ pub const InstructionSpec = struct {
             @as(u16, byte1) << 8;
 
         const extrs = self.arg_extractors;
-
-        switch (self.arg_extractors.len) {
+        switch (self.nArgs()) {
             0 => return &.{},
             1 => {
                 return &.{(opcode & extrs[0].mask) >> extrs[0].shift_amount};
@@ -73,6 +76,10 @@ pub const InstructionSpec = struct {
             2 => return &.{ (opcode & extrs[0].mask) >> extrs[0].shift_amount, (opcode & extrs[1].mask) >> extrs[1].shift_amount },
             else => std.debug.panic("Only up to 2 arguments are supported", .{}),
         }
+    }
+
+    pub fn nArgs(self: InstructionSpec) usize {
+        return self.arg_extractors.len;
     }
 };
 
@@ -191,6 +198,7 @@ pub const instructions = struct {
         cpu.accumulator = val;
     }
 
+    const ins = InstructionSpec.init;
     pub const all = [_]InstructionSpec{
         ins("NOP", "00000000", execute_nop),
         ins("INC", "0110rrrr", execute_inc),
@@ -214,8 +222,9 @@ pub const instructions = struct {
         ins("KBP", "11111100", execute_kbp),
         ins("FIM", "0010ppp0nnnnnnnn", execute_fim),
         ins("LDM", "1101nnnn", execute_ldm),
-        // ins("BBL", "1100nnnn", execute_bbl),
         // ins("JMS", "0101aaaaaaaaaaaa", execute_jms),
+
+        // ins("BBL", "1100nnnn", execute_bbl),
         // ins("JUN", "0100aaaaaaaaaaaa", execute_jun),
         // ins("JIN", "0011ppp1", execute_jin),
         // ins("JCN", "0001ccccaaaaaaaa", execute_jcn),
@@ -248,7 +257,7 @@ fn addItem(comptime T: type, comptime list: []const T, comptime item: T) []const
     return list ++ @as([]const T, &.{item});
 }
 
-pub fn splitOpcode(comptime opcode: []const u8) ![]const []const u8 {
+fn splitOpcode(comptime opcode: []const u8) ![]const []const u8 {
     comptime {
         if (opcode.len != 8 and opcode.len != 16) return OpcodeParseError.invalid_opcode_length;
 
@@ -357,6 +366,19 @@ pub fn getArgExtractors(comptime opcode: []const u8) []const ArgExtractor {
         }
 
         return extractors;
+    }
+}
+
+pub fn getOpcodeMask(opcode_string: []const u8) u16 {
+    comptime {
+        const opcode_16 = if (opcode_string.len == 8) opcode_string ++ "00000000" else opcode_string;
+        var mask: u16 = 0;
+        for (opcode_16, 0..) |bit, i| {
+            if (bit == '1') {
+                mask |= (1 << 15) >> i;
+            }
+        }
+        return mask;
     }
 }
 

@@ -1,6 +1,6 @@
 const std = @import("std");
 const time = std.time;
-const instructions = @import("instruction_spec.zig");
+const instruction_spec = @import("instruction_spec.zig");
 
 pub const Intel4004 = struct {
     index_registers: [16]u4,
@@ -59,7 +59,7 @@ pub const Intel4004 = struct {
 
     pub fn single_step(self: *Intel4004) !void {
         const byte1 = self.pram.bytes[self.program_counter];
-        const inst_spec = instructions.getInstructionSpec(byte1) orelse return ExecutionError.illegal_instruction_error;
+        const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return ExecutionError.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
         const byte2 = if (n_bytes == 2) self.pram.bytes[self.program_counter + 1] else null;
         self.program_counter +%= @intCast(n_bytes);
