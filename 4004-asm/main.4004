@@ -1,5 +1,18 @@
-FIM 0 5
-JIN 0
-INC 1
-INC 2
-INC 3
+/ Write enable
+FIM 0 0xE0
+SRC 0
+LDM 1
+WRR
+/ Set high 4 bits of address
+FIM 0 0
+SRC 0
+WRR
+/ Set low 8 bits of address
+FIM 0 25
+SRC 0
+/ Write the first 4 bits to PRAM
+LDM 1
+WPM
+/ Write the next 4 bits to PRAM
+LDM 2
+WPM

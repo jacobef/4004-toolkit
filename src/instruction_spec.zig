@@ -238,6 +238,128 @@ pub const instructions = struct {
         cpu.program_counter = cpu.popFromStack();
     }
 
+    fn execute_dcl(cpu: *Intel4004) void {
+        cpu.dram.selected_bank = @intCast(cpu.accumulator & 0b111);
+    }
+
+    fn execute_src(cpu: *Intel4004, pair: u3) void {
+        cpu.src_address = cpu.getRegisterPair(pair);
+    }
+
+    fn execute_rdm(cpu: *Intel4004) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        const char_n = cpu.src_address & 0b00001111;
+        cpu.accumulator = cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].data[char_n];
+    }
+
+    fn _execute_rdn(cpu: *Intel4004, char_n: u2) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        cpu.accumulator = cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].status[char_n];
+    }
+    fn execute_rd0(cpu: *Intel4004) void {
+        _execute_rdn(cpu, 0);
+    }
+    fn execute_rd1(cpu: *Intel4004) void {
+        _execute_rdn(cpu, 1);
+    }
+    fn execute_rd2(cpu: *Intel4004) void {
+        _execute_rdn(cpu, 2);
+    }
+    fn execute_rd3(cpu: *Intel4004) void {
+        _execute_rdn(cpu, 3);
+    }
+
+    fn execute_rdr(cpu: *Intel4004) void {
+        const port_n = (cpu.src_address & 0xF0) >> 4;
+        const port = cpu.rom.ports[port_n];
+        for (port.in_or_out, 0..) |in_or_out, line_n| {
+            if (in_or_out == .out) {
+                std.debug.panic("attempted to read from output line (line {d}, port {d})", .{ line_n, port_n });
+            }
+        }
+        cpu.accumulator = port.status;
+    }
+
+    fn execute_wrm(cpu: *Intel4004) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        const char_n = cpu.src_address & 0b00001111;
+        cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].data[char_n] = cpu.accumulator;
+    }
+
+    fn _execute_wrn(cpu: *Intel4004, char_n: u2) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].status[char_n] = cpu.accumulator;
+    }
+    fn execute_wr0(cpu: *Intel4004) void {
+        _execute_wrn(cpu, 0);
+    }
+    fn execute_wr1(cpu: *Intel4004) void {
+        _execute_wrn(cpu, 1);
+    }
+    fn execute_wr2(cpu: *Intel4004) void {
+        _execute_wrn(cpu, 2);
+    }
+    fn execute_wr3(cpu: *Intel4004) void {
+        _execute_wrn(cpu, 3);
+    }
+
+    fn execute_wmp(cpu: *Intel4004) void {
+        const port_n = (cpu.src_address & 0b11000000) >> 6;
+        cpu.accumulator = cpu.dram.banks[cpu.dram.selected_bank].ports[port_n];
+    }
+
+    fn execute_wrr(cpu: *Intel4004) void {
+        const port_n = (cpu.src_address & 0xF0) >> 4;
+        for (cpu.rom.ports[port_n].in_or_out, 0..) |in_or_out, line_n| {
+            if (in_or_out == .in) {
+                std.debug.panic("attempted to write to input line (line {d}, port {d})", .{ line_n, port_n });
+            }
+        }
+        cpu.rom.ports[port_n].status = cpu.accumulator;
+    }
+
+    fn execute_adm(cpu: *Intel4004) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        const char_n = cpu.src_address & 0b00001111;
+        const data = cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].data[char_n];
+        const result = add_helper(cpu.accumulator, data, cpu.carry_bit);
+        cpu.accumulator = result[0];
+        cpu.carry_bit = result[1];
+    }
+
+    fn execute_sbm(cpu: *Intel4004) void {
+        const chip_n = (cpu.src_address & 0b11000000) >> 6;
+        const reg_n = (cpu.src_address & 0b00110000) >> 4;
+        const char_n = cpu.src_address & 0b00001111;
+        const data = cpu.dram.banks[cpu.dram.selected_bank].chips[chip_n][reg_n].data[char_n];
+        const result = add_helper(cpu.accumulator, ~data, ~cpu.carry_bit);
+        cpu.accumulator = result[0];
+        cpu.carry_bit = result[1];
+    }
+
+    fn execute_wpm(cpu: *Intel4004) void {
+        const addr: u12 = (@as(u12, cpu.rom.ports[15].status) << 8) | @as(u12, cpu.src_address);
+        if (cpu.rom.ports[14].status & 0b0001 == 1) { // write
+            if (cpu.pram.wpm_half_byte == 0) {
+                cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0xF0) | @as(u8, cpu.accumulator);
+            } else {
+                cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0x0F) | (@as(u8, cpu.accumulator) << 4);
+            }
+        } else { // read
+            if (cpu.pram.wpm_half_byte == 0) {
+                cpu.accumulator = @as(u4, @intCast(cpu.pram.bytes[addr] & 0x0F));
+            } else {
+                cpu.accumulator = @as(u4, @intCast((cpu.pram.bytes[addr] & 0xF0) >> 4));
+            }
+        }
+        cpu.pram.wpm_half_byte +%= 1;
+    }
+
     const ins = InstructionSpec.init;
     pub const all = [_]InstructionSpec{
         ins("NOP", "00000000", execute_nop),
@@ -268,25 +390,24 @@ pub const instructions = struct {
         ins("ISZ", "0111rrrraaaaaaaa", execute_isz),
         ins("JMS", "0101aaaaaaaaaaaa", execute_jms),
         ins("BBL", "1100nnnn", execute_bbl),
-
-        // ins("DCL", "11111101", execute_dcl),
-        // ins("SRC", "0010ppp1", execute_src),
-        // ins("RDM", "11101001", execute_rdm),
-        // ins("RD0", "11101100", execute_rd0),
-        // ins("RD1", "11101101", execute_rd1),
-        // ins("RD2", "11101110", execute_rd2),
-        // ins("RD3", "11101111", execute_rd3),
-        // ins("WR0", "11100100", execute_wr0),
-        // ins("WR1", "11100101", execute_wr1),
-        // ins("WR2", "11100110", execute_wr2),
-        // ins("WR3", "11100111", execute_wr3),
-        // ins("RDR", "11101010", execute_rdr),
-        // ins("ADM", "11101011", execute_adm),
-        // ins("WRM", "11100000", execute_wrm),
-        // ins("WRR", "11100010", execute_wrr),
-        // ins("WMP", "11100001", execute_wmp),
-        // ins("SBM", "11101000", execute_sbm),
-        // ins("WPM", "11100011", execute_wpm),
+        ins("DCL", "11111101", execute_dcl),
+        ins("SRC", "0010ppp1", execute_src),
+        ins("RDM", "11101001", execute_rdm),
+        ins("RD0", "11101100", execute_rd0),
+        ins("RD1", "11101101", execute_rd1),
+        ins("RD2", "11101110", execute_rd2),
+        ins("RD3", "11101111", execute_rd3),
+        ins("RDR", "11101010", execute_rdr),
+        ins("WRM", "11100000", execute_wrm),
+        ins("WR0", "11100100", execute_wr0),
+        ins("WR1", "11100101", execute_wr1),
+        ins("WR2", "11100110", execute_wr2),
+        ins("WR3", "11100111", execute_wr3),
+        ins("WMP", "11100001", execute_wmp),
+        ins("WRR", "11100010", execute_wrr),
+        ins("ADM", "11101011", execute_adm),
+        ins("SBM", "11101000", execute_sbm),
+        ins("WPM", "11100011", execute_wpm),
     };
 };
 
@@ -408,7 +529,7 @@ pub fn getArgExtractors(comptime opcode: []const u8) []const ArgExtractor {
     }
 }
 
-pub fn getOpcodeMask(opcode_string: []const u8) u16 {
+pub fn getOpcodeMask(comptime opcode_string: []const u8) u16 {
     comptime {
         const opcode_16 = if (opcode_string.len == 8) opcode_string ++ "00000000" else opcode_string;
         var mask: u16 = 0;

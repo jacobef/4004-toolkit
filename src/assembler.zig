@@ -13,7 +13,7 @@ fn instructionFromMnemonic(mnemonic: []const u8) ?InstructionSpec {
 }
 
 fn evaluateArgument(T: type, arg: []const u8) !T {
-    return try std.fmt.parseInt(T, arg, 10);
+    return try std.fmt.parseInt(T, arg, 0);
 }
 
 fn getArgMask(arg_t: type, arg: []const u8, spec: InstructionSpec, arg_i: u1) !u16 {

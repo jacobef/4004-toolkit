@@ -13,6 +13,7 @@ pub const Intel4004 = struct {
     src_address: u8,
     dram: DataRAM,
     pram: ProgramRAM,
+    rom: ROM,
 
     pub fn pushToStack(self: *Intel4004, address: u12) void {
         self.stack_registers[self.stack_pointer] = address;
@@ -35,31 +36,49 @@ pub const Intel4004 = struct {
         self.index_registers[pair * 2 + 1] = @intCast(val & 0xF);
     }
 
+    // pub fn getDRAMDataChar(self: *Intel4004) u4 {
+    //     const chip_n = (self.src_address & 0b11000000) >> 6;
+    //     const reg_n = (self.src_address & 0b00110000) >> 4;
+    //     const char_n = self.src_address & 0b00001111;
+    //     return self.dram.banks[self.dram.selected_bank].chips[chip_n][reg_n].data[char_n];
+    // }
+
+    // pub fn setDRAMDataChar(self: *Intel4004) u4 {
+    //     const chip_n = (self.src_address & 0b11000000) >> 6;
+    //     const reg_n = (self.src_address & 0b00110000) >> 4;
+    //     const char_n = self.src_address & 0b00001111;
+    //     self.dram.banks[self.dram.selected_bank].chips[chip_n][reg_n].data[char_n] = self.accumulator;
+    // }
+
     pub fn reset(self: *Intel4004) void {
         self.* = std.mem.zeroes(Intel4004);
+        for (&self.rom.ports) |*port| {
+            for (&port.in_or_out) |*io| {
+                io.* = .out;
+            }
+        }
     }
 
     pub const DataRAM = struct {
         pub const Register = struct { data: [16]u4, status: [4]u4 };
-        banks: [8][4][4]Register,
+        pub const Bank = struct { chips: [4][4]Register, ports: [4]u4 };
+        banks: [8]Bank,
         ports: [4]u4,
         selected_bank: u3,
     };
-    pub const ProgramRAM = struct { bytes: [4096]u8, write_enable: bool, wpm_half_byte: u1 };
+    pub const ProgramRAM = struct { bytes: [4096]u8, wpm_half_byte: u1 };
     pub const ROM = struct {
-        pub const IOLine = struct { in_or_out: enum { in, out }, status: bool };
+        pub const IOPort = struct { in_or_out: [4]enum { in, out }, status: u4 };
         bytes: [4096]u8,
-        ports: [16][4]IOLine,
+        ports: [16]IOPort,
     };
-
-    const ExecutionError = error{illegal_instruction_error};
 
     const clock_speed_hz: u64 = 740_000;
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
         const byte1 = self.pram.bytes[self.program_counter];
-        const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return ExecutionError.illegal_instruction_error;
+        const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
         const byte2 = if (n_bytes == 2) self.pram.bytes[self.program_counter + 1] else null;
         self.program_counter +%= @intCast(n_bytes);
