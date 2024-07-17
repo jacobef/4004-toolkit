@@ -18,6 +18,7 @@ pub const OneOrTwoBytes = union(enum) { one: u8, two: u16 };
 pub const InstructionSpec = struct {
     mnemonic: []const u8,
     arg_extractors: []const ArgExtractor,
+    arg_types: []const CPUArgType,
     opcode_mask: u16,
     opcode_string: []const u8,
     func: InstructionFunction,
@@ -26,9 +27,8 @@ pub const InstructionSpec = struct {
         comptime {
             @setEvalBranchQuota(5000);
             const arg_extractors = getArgExtractors(opcode);
-            const arg_count = arg_extractors.len;
 
-            const func_union: InstructionFunction = switch (arg_count) {
+            const func_union: InstructionFunction = switch (arg_extractors.len) {
                 0 => .{ .f_no_args = func },
                 1 => blk: {
                     const arg_bits = @popCount(arg_extractors[0].mask);
@@ -54,6 +54,7 @@ pub const InstructionSpec = struct {
             return InstructionSpec{
                 .mnemonic = mnemonic,
                 .arg_extractors = arg_extractors,
+                .arg_types = getArgTypes(opcode),
                 .opcode_mask = getOpcodeMask(opcode),
                 .opcode_string = opcode,
                 .func = func_union,
@@ -61,7 +62,7 @@ pub const InstructionSpec = struct {
         }
     }
 
-    pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8) []const u16 {
+    pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8, buf: *[2]u16) []const u16 {
         const opcode: u16 =
             if (byte2) |b2|
             (@as(u16, byte1) << 8) | @as(u16, b2)
@@ -70,11 +71,16 @@ pub const InstructionSpec = struct {
 
         const extrs = self.arg_extractors;
         switch (self.nArgs()) {
-            0 => return &.{},
+            0 => return buf[0..0],
             1 => {
-                return &.{(opcode & extrs[0].mask) >> extrs[0].shift_amount};
+                buf[0] = (opcode & extrs[0].mask) >> extrs[0].shift_amount;
+                return buf[0..1];
             },
-            2 => return &.{ (opcode & extrs[0].mask) >> extrs[0].shift_amount, (opcode & extrs[1].mask) >> extrs[1].shift_amount },
+            2 => {
+                buf[0] = (opcode & extrs[0].mask) >> extrs[0].shift_amount;
+                buf[1] = (opcode & extrs[1].mask) >> extrs[1].shift_amount;
+                return buf[0..2];
+            },
             else => std.debug.panic("Only up to 2 arguments are supported", .{}),
         }
     }
@@ -445,12 +451,30 @@ fn splitOpcode(comptime opcode: []const u8) ![]const []const u8 {
     }
 }
 
-const CPUArgType = enum { register, register_pair, number, address, condition };
+pub const CPUArgType = enum { register, register_pair, number, address, condition };
 
 const CPUArgSpec = struct {
     arg_type: CPUArgType,
     n_bits: u4,
 };
+
+fn getArgTypes(comptime opcode: []const u8) []const CPUArgType {
+    comptime {
+        var out: []const CPUArgType = &.{};
+        const opcode_split = try splitOpcode(opcode);
+        for (opcode_split) |part| {
+            out = switch (part[0]) {
+                'a' => addItem(CPUArgType, out, .address),
+                'c' => addItem(CPUArgType, out, .condition),
+                'n' => addItem(CPUArgType, out, .number),
+                'p' => addItem(CPUArgType, out, .register_pair),
+                'r' => addItem(CPUArgType, out, .register),
+                else => out
+            };
+        }
+        return out;
+    }
+}
 
 const ParsedOpcodePart = union(enum) {
     arg: CPUArgSpec,
