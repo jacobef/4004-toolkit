@@ -14,7 +14,7 @@ fn instructionFromMnemonic(mnemonic: []const u8) ?InstructionSpec {
     return null;
 }
 
-fn evaluateArgument(T: type, arg: []const u8, labels: std.StringHashMap(u12)) !struct { val: T, type: CPUArgType }{
+fn evalExpr(T: type, arg: []const u8, labels: ?std.StringHashMap(u12)) !struct { val: T, type: CPUArgType }{
     if (arg.len == 0) {
         std.debug.panic("argument is length 0", .{});
     } else if (arg[arg.len-1] == 'R') {
@@ -25,18 +25,37 @@ fn evaluateArgument(T: type, arg: []const u8, labels: std.StringHashMap(u12)) !s
         return .{.val = try std.fmt.parseInt(T, arg[0..arg.len-1], 2), .type = .number};
     } else if (arg[arg.len-1] == 'H') {
         return .{.val = try std.fmt.parseInt(T, arg[0..arg.len-1], 16), .type = .number};
+    } else if (arg[arg.len-1] == '?') {
+        const cond = arg[0..arg.len-1];
+        var val: u4 = undefined;
+        if (std.mem.eql(u8, cond, "Z")) {
+            val = 0b0100;
+        } else if (std.mem.eql(u8, cond, "NZ")) {
+            val = 0b1100;
+        } else if (std.mem.eql(u8, cond, "C")) {
+            val = 0b0010;
+        } else if (std.mem.eql(u8, cond, "NC")) {
+            val = 0b1010;
+        } else {
+            return error.invalid_condition;
+        }
+        return .{.val = @intCast(val), .type = .condition};
     } else if (arg.len == 3 and arg[0] == '\'' and arg[arg.len-1] == '\'') {
         return .{.val = @intCast(arg[1]), .type = .number};  // TODO remove UB
     } else if (arg[0] >= '0' and arg[0] <= '9') {
         return .{.val = try std.fmt.parseInt(T, arg, 10), .type = .number};
     } else {
-        return .{.val = @intCast(labels.get(arg) orelse return error.no_such_label), .type = .address};
+        if (labels) |labels_| {
+            return .{.val = @intCast(labels_.get(arg) orelse return error.no_such_label), .type = .address};
+        } else {
+            return error.labels_not_provided;
+        }
     }
 }
 
 fn getArgMask(arg_t: type, args: []const []const u8, spec: InstructionSpec, arg_i: u1, labels: std.StringHashMap(u12)) !u16 {
-    const arg_evald = try evaluateArgument(arg_t, args[arg_i], labels);
-    if (arg_evald.type != spec.arg_types[arg_i]) {
+    const arg_evald = try evalExpr(arg_t, args[arg_i], labels);
+    if (arg_evald.type != spec.arg_types[arg_i] and !(arg_evald.type == .number and spec.arg_types[arg_i] == .condition)) {
         std.debug.print("error in {s} ", .{spec.mnemonic});
         for (args) |arg| {
             std.debug.print("{s} ", .{arg});
@@ -87,11 +106,71 @@ fn getLabels(lines: []ParsedLine) !std.StringHashMap(u12) {
     return labels_to_values;
 }
 
+fn getJCNMacroReplacement(condition_code: []const u8, arg: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
+    var out_line = std.ArrayList(u8).init(allocator);
+    try out_line.appendSlice("JCN ");
+    try out_line.appendSlice(condition_code);
+    try out_line.appendSlice("B ");
+    try out_line.appendSlice(arg);
+    var out = try allocator.alloc(ParsedLine, 1);
+    out[0] = (try parseLine(out_line.items, allocator)).?;
+    return out;
+}
+
+fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
+    if (std.mem.eql(u8, name, "JZ")) {
+        return getJCNMacroReplacement("0100", args[0], allocator);
+    } else if (std.mem.eql(u8, name, "JNZ")) {
+        return getJCNMacroReplacement( "1100", args[0], allocator);
+    } else if (std.mem.eql(u8, name, "JC")) {
+        return getJCNMacroReplacement("0010", args[0], allocator);
+    } else if (std.mem.eql(u8, name, "JNC")) {
+        return getJCNMacroReplacement("1010", args[0], allocator);
+    } else {
+        return error.no_such_macro;
+    }
+}
+
+fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLine {
+    var out = std.ArrayList(ParsedLine).init(allocator);
+    for (lines) |line| {
+        switch (line) {
+            .macro => |macro_line| {
+                const replacement_lines = try getMacroReplacement(macro_line.name, macro_line.args, allocator);
+                if (replacement_lines.len > 0) {
+                    if (macro_line.label) |label| {
+                        switch (replacement_lines[0]) {
+                            .instruction => |*inst| inst.label = label,
+                            .macro => |*mac| mac.label = label,
+                            .number => |*num| num.label = label,
+                            .equate => |*eq| eq.label = label,
+                            .origin => {},
+                        }
+                    }
+                }
+                try out.appendSlice(replacement_lines);
+            },
+            else => try out.append(line)
+        }
+    }
+    return out.items;
+}
+
+fn getRemainingWords(iter: *std.mem.TokenIterator(u8, .scalar), allocator: std.mem.Allocator) ![]const []const u8 {
+    var out = std.ArrayList([]const u8).init(allocator);
+    while (iter.next()) |word| {
+        try out.append(word);
+    }
+    return out.items;
+}
+
 const ParsedLine = union(enum) {
     instruction: struct { label: ?[]const u8, mnemonic: []const u8, args: []const []const u8 },
+    macro: struct { label: ?[]const u8, name: []const u8, args: []const []const u8 },
     number: struct { label: ?[]const u8, expr: []const u8 },
     equate: struct { label: ?[]const u8, expr: []const u8 },
-    origin: []const u8 };
+    origin: []const u8 
+};
 
 fn parseLine(line: []const u8, allocator: std.mem.Allocator) !?ParsedLine {
     var comment_remover = std.mem.splitScalar(u8, line, '/');
@@ -101,14 +180,16 @@ fn parseLine(line: []const u8, allocator: std.mem.Allocator) !?ParsedLine {
     if (label) |_| {
         _ = word_iterator.next();
     }
-    const mnemonic = word_iterator.next() orelse return error.label_without_mnemonic;
-
-    var buf = try allocator.alloc([]const u8, 2);
-    const arg1 = word_iterator.next() orelse return .{ .instruction = .{ .label = label, .mnemonic = mnemonic, .args = buf[0..0] } };
-    buf[0] = arg1;
-    const arg2 = word_iterator.next() orelse return .{ .instruction = .{ .label = label, .mnemonic = mnemonic, .args = buf[0..1] } };
-    buf[1] = arg2;
-    return .{ .instruction = .{ .label = label, .mnemonic = mnemonic, .args = buf[0..2] } };
+    const first_nonlabel_word = word_iterator.next() orelse return error.no_mnemonic_or_number;
+    if (first_nonlabel_word[0] == '#') {
+        return .{ .macro = .{ .label = label, .name = first_nonlabel_word[1..], .args = try getRemainingWords(&word_iterator, allocator) } };
+    }
+    if (instructionFromMnemonic(first_nonlabel_word)) |_| {
+        const mnemonic = first_nonlabel_word;
+        return .{ .instruction = .{ .label = label, .mnemonic = mnemonic, .args = try getRemainingWords(&word_iterator, allocator) } };
+    } else {
+        return .{ .number = .{.label = label, .expr = first_nonlabel_word }};
+    }
 }
 
 pub fn main() !void {
@@ -130,13 +211,15 @@ pub fn main() !void {
     }
     const parsed_lines = parsed_lines_al.items;
 
-    const labels = try getLabels(parsed_lines);
+    const parsed_lines_macros_replaced = try replaceMacros(parsed_lines, allocator);
+
+    const labels = try getLabels(parsed_lines_macros_replaced);
     var it = labels.iterator();
     while (it.next()) |entry| {
         std.debug.print("{s} -> {d}\n", .{entry.key_ptr.*, entry.value_ptr.*});
     }
 
-    for (parsed_lines) |line| {
+    for (parsed_lines_macros_replaced) |line| {
         switch (line) {
             .instruction => |inst_line| {
                 const spec = instructionFromMnemonic(inst_line.mnemonic) orelse return error.no_such_instruction;
@@ -149,12 +232,14 @@ pub fn main() !void {
                     },
                 }
             },
+            .number => |num_line| {
+                try assembled_bytes.append((try evalExpr(u8, num_line.expr, labels)).val);
+            },
             else => std.debug.panic("unsupported line type", .{})
         }
     }
 
-    const n_bytes_written = try output_file.write(assembled_bytes.items);
-    std.debug.print("{d} bytes written\n", .{n_bytes_written});
+    _ = try output_file.write(assembled_bytes.items);
 
     std.debug.print("{any}\n", .{assembled_bytes.items});
 }

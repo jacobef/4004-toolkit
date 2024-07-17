@@ -207,6 +207,7 @@ pub const instructions = struct {
 
     fn execute_jun(cpu: *Intel4004, addr: u12) void {
         cpu.program_counter = addr;
+        // std.debug.print("[CPU] jumped to {}\n", .{addr});
     }
 
     fn execute_jin(cpu: *Intel4004, pair: u3) void {
@@ -214,10 +215,10 @@ pub const instructions = struct {
     }
 
     fn execute_jcn(cpu: *Intel4004, condition: u4, addr: u8) void {
-        const test_cond = condition & 0b0001 == 1 and cpu.test_signal == 0;
-        const carry_cond = condition & 0b0010 == 1 and cpu.carry_bit == 1;
-        const acc_cond = condition & 0b0100 == 1 and cpu.accumulator == 0;
-        const invert = condition & 0b1000 == 1;
+        const test_cond = condition & 0b0001 != 0 and cpu.test_signal == 0;
+        const carry_cond = condition & 0b0010 != 0 and cpu.carry_bit == 1;
+        const acc_cond = condition & 0b0100 != 0 and cpu.accumulator == 0;
+        const invert = condition & 0b1000 != 0;
         var should_jump = test_cond or carry_cond or acc_cond;
         if (invert) {
             should_jump = !should_jump;
@@ -235,7 +236,7 @@ pub const instructions = struct {
     }
 
     fn execute_jms(cpu: *Intel4004, addr: u12) void {
-        cpu.pushToStack(cpu.program_counter + 2);
+        cpu.pushToStack(cpu.program_counter); // since the PC has already been incremented
         cpu.program_counter = addr;
     }
 
@@ -280,12 +281,14 @@ pub const instructions = struct {
     fn execute_rdr(cpu: *Intel4004) void {
         const port_n = (cpu.src_address & 0xF0) >> 4;
         const port = cpu.rom.ports[port_n];
-        for (port.in_or_out, 0..) |in_or_out, line_n| {
-            if (in_or_out == .out) {
-                std.debug.panic("attempted to read from output line (line {d}, port {d})", .{ line_n, port_n });
-            }
-        }
+        // for (port.in_or_out, 0..) |in_or_out, line_n| {
+        //     if (in_or_out == .out) {
+        //         std.debug.panic("attempted to read from output line (line {d}, port {d})", .{ line_n, port_n });
+        //     }
+        // }
         cpu.accumulator = port.status;
+        // std.debug.print("[CPU] read {} from port {}\n", .{cpu.accumulator, port_n});
+        // std.time.sleep(1_000_000_00);
     }
 
     fn execute_wrm(cpu: *Intel4004) void {
@@ -320,12 +323,8 @@ pub const instructions = struct {
 
     fn execute_wrr(cpu: *Intel4004) void {
         const port_n = (cpu.src_address & 0xF0) >> 4;
-        for (cpu.rom.ports[port_n].in_or_out, 0..) |in_or_out, line_n| {
-            if (in_or_out == .in) {
-                std.debug.panic("attempted to write to input line (line {d}, port {d})", .{ line_n, port_n });
-            }
-        }
         cpu.rom.ports[port_n].status = cpu.accumulator;
+        // std.debug.print("[CPU] wrote {} to port {}\n", .{cpu.accumulator, port_n});
     }
 
     fn execute_adm(cpu: *Intel4004) void {
@@ -352,15 +351,15 @@ pub const instructions = struct {
         const addr: u12 = (@as(u12, cpu.rom.ports[15].status) << 8) | @as(u12, cpu.src_address);
         if (cpu.rom.ports[14].status & 0b0001 == 1) { // write
             if (cpu.pram.wpm_half_byte == 0) {
-                cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0xF0) | @as(u8, cpu.accumulator);
-            } else {
                 cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0x0F) | (@as(u8, cpu.accumulator) << 4);
+            } else {
+                cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0xF0) | @as(u8, cpu.accumulator);
             }
         } else { // read
             if (cpu.pram.wpm_half_byte == 0) {
-                cpu.accumulator = @as(u4, @intCast(cpu.pram.bytes[addr] & 0x0F));
+                cpu.rom.ports[14].status = @as(u4, @intCast((cpu.pram.bytes[addr] & 0xF0) >> 4));
             } else {
-                cpu.accumulator = @as(u4, @intCast((cpu.pram.bytes[addr] & 0xF0) >> 4));
+                cpu.rom.ports[15].status = @as(u4, @intCast(cpu.pram.bytes[addr] & 0x0F));
             }
         }
         cpu.pram.wpm_half_byte +%= 1;

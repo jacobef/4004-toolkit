@@ -27,36 +27,39 @@ pub const Intel4004 = struct {
     }
 
     pub fn getRegisterPair(self: Intel4004, pair: u3) u8 {
-        const reg1_val: u8 = @intCast(self.index_registers[pair * 2]);
-        const reg2_val: u8 = @intCast(self.index_registers[pair * 2 + 1]);
+        const reg1_val: u8 = self.index_registers[@as(u4, pair) * 2];
+        const reg2_val: u8 = self.index_registers[@as(u4, pair) * 2 + 1];
         return (reg1_val << 4) | reg2_val;
     }
 
     pub fn setRegisterPair(self: *Intel4004, pair: u3, val: u8) void {
-        self.index_registers[pair * 2] = @intCast(val >> 4);
-        self.index_registers[pair * 2 + 1] = @intCast(val & 0xF);
+        self.index_registers[@as(u4, pair) * 2] = @intCast(val >> 4);
+        self.index_registers[@as(u4, pair) * 2 + 1] = @intCast(val & 0xF);
     }
-
-    // pub fn getDRAMDataChar(self: *Intel4004) u4 {
-    //     const chip_n = (self.src_address & 0b11000000) >> 6;
-    //     const reg_n = (self.src_address & 0b00110000) >> 4;
-    //     const char_n = self.src_address & 0b00001111;
-    //     return self.dram.banks[self.dram.selected_bank].chips[chip_n][reg_n].data[char_n];
-    // }
-
-    // pub fn setDRAMDataChar(self: *Intel4004) u4 {
-    //     const chip_n = (self.src_address & 0b11000000) >> 6;
-    //     const reg_n = (self.src_address & 0b00110000) >> 4;
-    //     const char_n = self.src_address & 0b00001111;
-    //     self.dram.banks[self.dram.selected_bank].chips[chip_n][reg_n].data[char_n] = self.accumulator;
-    // }
 
     pub fn reset(self: *Intel4004) void {
         self.* = std.mem.zeroes(Intel4004);
-        for (&self.rom.ports) |*port| {
-            for (&port.in_or_out) |*io| {
-                io.* = .out;
-            }
+
+        const port_configs = [16][4]@TypeOf(self.rom.ports[0].in_or_out[0]){
+            .{.in, .in, .in, .in},  // upper 4 bits of character input from keyboard
+            .{.in, .in, .in, .in},  // lower 4 bits of character input from keyboard
+            .{.in, .in, .in, .in},  // "char ready" input from keyboard
+            .{.out, .out, .out, .out},  // "done receiving" output to keyboard
+            .{.out, .out, .out, .out},  // upper 4 bits of character output to monitor
+            .{.out, .out, .out, .out},  // lower 4 bits of character output to monitor
+            .{.out, .out, .out, .out},  // "char ready" output to monitor
+            .{.in, .in, .in, .in},  // "done displaying" input from monitor
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+            .{.out, .out, .out, .out},
+        };
+        for (&self.rom.ports, port_configs) |*port, conf| {
+            port.in_or_out = conf;
         }
     }
 
@@ -78,7 +81,7 @@ pub const Intel4004 = struct {
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
-        std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter)});
+        // std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter)});
         const byte1 = self.pram.bytes[self.program_counter];
         const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
