@@ -1,1 +1,6 @@
-FIM 7P 0
+JUN A
+= 254
+A, #JNZ B
+LDM 2
+B, LDM 1
+FIM 0P 'E'
