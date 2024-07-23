@@ -4,4 +4,5 @@ JUN A
 A, #JNZ B+1
 FIM 0P 3
 B, LDM 1
-FIM 0P 'E'
+FIM 0P '\\'
+FIM 0P '\''

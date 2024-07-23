@@ -38,6 +38,8 @@ fn evalCharExpr(expr: []const u8) !u8 {
         return '\t';
     } else if (std.mem.eql(u8, inner_char, "\\\\")) {
         return '\\';
+    } else if (std.mem.eql(u8, inner_char, "\\'")) {
+        return '\'';
     } else if (inner_char[0] == '\\' and inner_char.len > 1) {
         return error.unrecognized_escape_sequence;
     } else if (inner_char.len > 1) {
@@ -74,7 +76,15 @@ fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
                 const start = i;
                 if (expr[i] == '\'') {
                     i += 1; // Skip the open quote
-                    while (i < expr.len and (expr[i] != '\'' or expr[i-1] == '\\')) : (i += 1) {}
+                    while (i < expr.len) {
+                        if (expr[i] == '\\') {
+                            i += 2;
+                        } else if (expr[i] == '\'') {
+                            break;
+                        } else {
+                            i += 1;
+                        }
+                    }
                     if (i >= expr.len) return error.unterminated_char_literal;
                     i += 1; // Include the closing quote
                 } else {
