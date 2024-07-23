@@ -216,18 +216,15 @@ fn getLabels(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringHashM
     var labels_to_values = std.StringHashMap(Expression).init(allocator);
     var addr: u12 = 0;
     for (lines) |line| {
-        switch (line) {
+        if (line.label) |label| {
+            try labels_to_values.put(label, .{.val = addr, .type = .address });
+        }
+        switch (line.rest) {
             .instruction => |inst_line| {
-                if (inst_line.label) |label| {
-                    try labels_to_values.put(label, .{.val = addr, .type = .address });
-                }
                 const inst = instructionFromMnemonic(inst_line.mnemonic) orelse return error.invalid_mnemonic;
                 addr += @intCast(inst.opcode_string.len / 8);
             },
-            .number => |num_line| {
-                if (num_line.label) |label| {
-                    try labels_to_values.put(label, .{.val = addr, .type = .address });
-                }
+            .expr => |_| {
                 addr += 1;
             },
             .origin => |new_pc_expr| {
@@ -238,6 +235,7 @@ fn getLabels(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringHashM
                 addr = @intCast(new_pc);
             },
             .equate => doNothing(),
+            .empty => doNothing(),
             .macro => std.debug.panic("getLabels encountered a macro", .{})
         }
     }
@@ -251,7 +249,7 @@ fn getJCNMacroReplacement(condition_code: []const u8, arg: []const u8, allocator
     try out_line.appendSlice(" ");
     try out_line.appendSlice(arg);
     var out = try allocator.alloc(ParsedLine, 1);
-    out[0] = (try parseLine(out_line.items, allocator)).?;
+    out[0] = try parseLine(out_line.items, allocator);
     return out;
 }
 
@@ -287,18 +285,12 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
 fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLine {
     var out = std.ArrayList(ParsedLine).init(allocator);
     for (lines) |line| {
-        switch (line) {
+        switch (line.rest) {
             .macro => |macro_line| {
                 const replacement_lines = try getMacroReplacement(macro_line.name, macro_line.args, allocator);
                 if (replacement_lines.len > 0) {
-                    if (macro_line.label) |label| {
-                        switch (replacement_lines[0]) {
-                            .instruction => |*inst| inst.label = label,
-                            .macro => |*mac| mac.label = label,
-                            .number => |*num| num.label = label,
-                            .equate => |_| return error.label_on_equate_line,
-                            .origin => |_| return error.label_on_origin_line
-                        }
+                    if (line.label) |label| {
+                        replacement_lines[0].label = label;
                     }
                 }
                 try out.appendSlice(try replaceMacros(replacement_lines, allocator));
@@ -318,47 +310,49 @@ fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 
     return out.items;
 }
 
-const ParsedLine = union(enum) {
-    instruction: struct { label: ?[]const u8, mnemonic: []const u8, args: []const []const u8 },
-    macro: struct { label: ?[]const u8, name: []const u8, args: []const []const u8 },
-    number: struct { label: ?[]const u8, expr: []const u8 },
+const ParsedLineNoLabel = union(enum) {
+    instruction: struct { mnemonic: []const u8, args: []const []const u8 },
+    macro: struct { name: []const u8, args: []const []const u8 },
+    expr: []const u8,
     equate: struct { name: []const u8, expr: []const u8 },
-    origin: []const u8
+    origin: []const u8,
+    empty
 };
 
-fn parseLine(line: []const u8, allocator: std.mem.Allocator) !?ParsedLine {
+const ParsedLine = struct {
+    label: ?[]const u8,
+    rest: ParsedLineNoLabel
+};
+
+fn parseLine(line: []const u8, allocator: std.mem.Allocator) !ParsedLine {
     var comment_remover = std.mem.splitScalar(u8, line, '/');
     const words = try getWords(comment_remover.first(), allocator);
-    if (words.len == 0) return null;
 
-    const label = if (words[0][words[0].len - 1] == ',') words[0][0..words[0].len-1] else null;
+    const label = if (words.len > 0 and words[0][words[0].len - 1] == ',') words[0][0..words[0].len-1] else null;
     const words_without_label = if (label) |_| words[1..] else words;
+    if (words_without_label.len == 0) {
+        return .{ .label = label, .rest = .empty };
+    }
 
+    var parsed_line_no_label: ParsedLineNoLabel = undefined;
     if (std.mem.eql(u8, words_without_label[0], "=")) {
         if (words_without_label.len != 2) {
             return error.origin_wrong_number_of_expressions;
         }
-        if (label) |_| {
-            return error.origin_with_label;
-        }
-        return .{ .origin = words[1] };
+        parsed_line_no_label = .{ .origin = words_without_label[1] };
     } else if (words_without_label.len >= 2 and std.mem.eql(u8, words_without_label[1], "=")) {
         if (words_without_label.len != 3) {
             return error.equate_wrong_number_of_expressions;
         }
-        if (label) |_| {
-            return error.equate_with_address_label;
-        }
-        return .{ .equate = .{.name = words_without_label[0], .expr = words_without_label[2] } };
-    }
-    if (words_without_label[0][0] == '#') {
-        return .{ .macro = .{ .label = label, .name = words_without_label[0][1..], .args = words_without_label[1..] } };
-    }
-    if (instructionFromMnemonic(words_without_label[0])) |_| {
-        return .{ .instruction = .{ .label = label, .mnemonic = words_without_label[0], .args = words_without_label[1..] } };
+        parsed_line_no_label = .{ .equate = .{ .name = words_without_label[0], .expr = words_without_label[2] } };
+    } else if (words_without_label[0][0] == '#') {
+        parsed_line_no_label = .{ .macro = .{ .name = words_without_label[0][1..], .args = words_without_label[1..] } };
+    } else if (instructionFromMnemonic(words_without_label[0])) |_| {
+        parsed_line_no_label = .{ .instruction = .{ .mnemonic = words_without_label[0], .args = words_without_label[1..] } };
     } else {
-        return .{ .number = .{.label = label, .expr = words_without_label[0] }};
+        parsed_line_no_label = .{ .expr = words_without_label[0] };
     }
+    return .{ .label = label, .rest = parsed_line_no_label };
 }
 
 fn add_byte_at_pc(bytes: *std.ArrayList(u8), byte: u8, pc: u12) !void {
@@ -387,7 +381,7 @@ pub fn main() !void {
 
     var parsed_lines_al = std.ArrayList(ParsedLine).init(allocator);
     while (line_iterator.next()) |line| {
-        try parsed_lines_al.append((try parseLine(line, allocator)) orelse continue);
+        try parsed_lines_al.append(try parseLine(line, allocator));
     }
     const parsed_lines_macros_replaced = try replaceMacros(parsed_lines_al.items, allocator);
 
@@ -398,7 +392,7 @@ pub fn main() !void {
     }
     var program_counter: u12 = 0;
     for (parsed_lines_macros_replaced) |line| {
-        switch (line) {
+        switch (line.rest) {
             .instruction => |inst_line| {
                 const spec = instructionFromMnemonic(inst_line.mnemonic) orelse return error.no_such_instruction;
                 const assembled_instruction = try assembleInstruction(spec, inst_line.args, program_counter, labels, allocator);
@@ -415,8 +409,8 @@ pub fn main() !void {
                     },
                 }
             },
-            .number => |num_line| {
-                const num_val = (try evalExpr(num_line.expr, program_counter, labels, allocator)).val;
+            .expr => |num_line| {
+                const num_val = (try evalExpr(num_line, program_counter, labels, allocator)).val;
                 if (num_val > std.math.maxInt(u8)) {
                     return error.standalone_number_too_big;
                 }
@@ -433,7 +427,10 @@ pub fn main() !void {
                 }
                 program_counter = @intCast(new_pc);
             },
-            else => std.debug.panic("unsupported line type", .{})
+            .macro => |_| {
+                std.debug.panic("macro was not replaced\n", .{});
+            },
+            .empty => doNothing()
         }
     }
 

@@ -1,8 +1,8 @@
 LDM 10111001B.0
 JUN A
-= 254
-A, #JNZ B+1
+D, = 254
+A, #JNZ B+2
 FIM 0P 3
-B, LDM 1
+B,
 FIM 0P '\\'
 FIM 0P '\''
