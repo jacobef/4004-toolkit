@@ -74,7 +74,7 @@ pub fn main() !void {
     var intel4004: Intel4004 = undefined;
     intel4004.reset();
 
-    var cmd_args = try std.process.argsWithAllocator(std.heap.page_allocator);
+    var cmd_args = try std.process.argsWithAllocator(allocator);
     _ = cmd_args.next();
     const executable_path = cmd_args.next() orelse return error.NoInputFileGiven;
     const executable_file = try std.fs.cwd().openFile(executable_path, .{ .mode = .read_only });

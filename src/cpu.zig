@@ -81,7 +81,7 @@ pub const Intel4004 = struct {
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
-        std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter)});
+        // std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter)});
         const byte1 = self.pram.bytes[self.program_counter];
         const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;

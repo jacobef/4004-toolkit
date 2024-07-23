@@ -213,7 +213,7 @@ fn assembleInstruction(spec: InstructionSpec, args: []const []const u8, pc: u12,
 }
 
 fn getLabels(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringHashMap(Expression) {
-    var labels_to_values = std.StringHashMap(Expression).init(std.heap.page_allocator);
+    var labels_to_values = std.StringHashMap(Expression).init(allocator);
     var addr: u12 = 0;
     for (lines) |line| {
         switch (line) {
