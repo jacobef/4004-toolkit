@@ -47,15 +47,54 @@ fn evalCharExpr(expr: []const u8) !u8 {
     }
 }
 
-fn evalExpr(arg: []const u8, pc: u12, labels: ?std.StringHashMap(Expression)) !Expression {
-    if (arg.len == 0) {
-        std.debug.panic("argument is length 0", .{});
-    } else if (std.mem.eql(u8, arg, "*")) {
+const ExprToken = union(enum) {
+    subexpr: []const u8,
+    operator: enum { plus, minus, dot },
+};
+
+fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
+    var tokens = std.ArrayList(ExprToken).init(allocator);
+    var i: usize = 0;
+
+    while (i < expr.len) {
+        switch (expr[i]) {
+            '+' => {
+                try tokens.append(.{ .operator = .plus });
+                i += 1;
+            },
+            '-' => {
+                try tokens.append(.{ .operator = .minus });
+                i += 1;
+            },
+            '.' => {
+                try tokens.append(.{ .operator = .dot });
+                i += 1;
+            },
+            else => {
+                const start = i;
+                if (expr[i] == '\'') {
+                    i += 1; // Skip the open quote
+                    while (i < expr.len and (expr[i] != '\'' or expr[i-1] == '\\')) : (i += 1) {}
+                    if (i >= expr.len) return error.unterminated_char_literal;
+                    i += 1; // Include the closing quote
+                } else {
+                    while (i < expr.len and !std.mem.containsAtLeast(u8, "+-.", 1, expr[i..i+1])) : (i += 1) {}
+                }
+                try tokens.append(.{ .subexpr = expr[start..i] });
+            },
+        }
+    }
+
+    return tokens.toOwnedSlice();
+}
+
+fn evalSimpleExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expression)) !Expression {
+    if (std.mem.eql(u8, expr, "*")) {
         return .{.val = pc, .type = .address};
-    } else if (arg[0] == '\'') {
-        return .{.val = try evalCharExpr(arg), .type = .number};
-    } else if (arg[arg.len-1] == '?') {
-        const cond = arg[0..arg.len-1];
+    } else if (expr[0] == '\'') {
+        return .{.val = try evalCharExpr(expr), .type = .number};
+    } else if (expr[expr.len-1] == '?') {
+        const cond = expr[0..expr.len-1];
         var val: u4 = undefined;
         if (std.mem.eql(u8, cond, "Z")) {
             val = 0b0100;
@@ -69,28 +108,59 @@ fn evalExpr(arg: []const u8, pc: u12, labels: ?std.StringHashMap(Expression)) !E
             return error.invalid_condition;
         }
         return .{.val = val, .type = .condition};
-    } else if (arg[0] < '0' or arg[0] > '9') {
+    } else if (expr[0] < '0' or expr[0] > '9') {
         if (labels) |labels_| {
-            return labels_.get(arg) orelse {
-                std.debug.print("no such label: {s}\n", .{arg});
+            return labels_.get(expr) orelse {
+                std.debug.print("no such label: {s}\n", .{expr});
                 return error.no_such_label;
             };
         } else {
             return error.labels_map_not_provided;
         }
-    } else if (arg[arg.len-1] == 'R') {
-        return .{.val = try std.fmt.parseInt(u4, arg[0..arg.len-1], 10), .type = .register};
-    } else if (arg[arg.len-1] == 'P') {
-        return .{.val = try std.fmt.parseInt(u3, arg[0..arg.len-1], 10), .type = .register_pair};
-    } else if (arg[arg.len-1] == 'B') {
-        return .{.val = try std.fmt.parseInt(u64, arg[0..arg.len-1], 2), .type = .number};
+    } else if (expr[expr.len-1] == 'R') {
+        return .{.val = try std.fmt.parseInt(u4, expr[0..expr.len-1], 10), .type = .register};
+    } else if (expr[expr.len-1] == 'P') {
+        return .{.val = try std.fmt.parseInt(u3, expr[0..expr.len-1], 10), .type = .register_pair};
+    } else if (expr[expr.len-1] == 'B') {
+        return .{.val = try std.fmt.parseInt(u64, expr[0..expr.len-1], 2), .type = .number};
     } else {
-        return .{.val = try std.fmt.parseInt(u64, arg, 10), .type = .number};
+        return .{.val = try std.fmt.parseInt(u64, expr, 10), .type = .number};
     }
 }
 
-fn getArgMask(arg_t: type, args: []const []const u8, spec: InstructionSpec, arg_i: u1, pc: u12, labels: std.StringHashMap(Expression)) !u16 {
-    const arg_evald = try evalExpr(args[arg_i], pc,  labels);
+fn evalExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expression), allocator: std.mem.Allocator) !Expression {
+    const tokens = try tokenizeExpr(expr, allocator);
+    switch (tokens.len) {
+        1 => return evalSimpleExpr(expr, pc, labels),
+        3 => switch (tokens[1].operator) {
+            .plus => {
+                const term1 = try evalExpr(tokens[0].subexpr, pc, labels, allocator);
+                const term2 = try evalExpr(tokens[2].subexpr, pc, labels, allocator);
+                return .{.val = term1.val+term2.val, .type = term1.type};
+            },
+            .minus => {
+                const term1 = try evalExpr(tokens[0].subexpr, pc, labels, allocator);
+                const term2 = try evalExpr(tokens[2].subexpr, pc, labels, allocator);
+                return .{.val = term1.val-term2.val, .type = term1.type};
+            },
+            .dot => {
+                const num = try evalExpr(tokens[0].subexpr, pc, labels, allocator);
+                if (num.type != .number) {
+                    return error.nibble_from_non_number;
+                }
+                const nibble_n = try std.fmt.parseInt(u3, tokens[2].subexpr, 10);
+                const shift_amount = @as(u5, nibble_n) * 4;
+                return .{.val = (num.val >> shift_amount) & @as(u64, 0xF), .type = .number};
+            }
+        },
+        else => {
+            return error.wrong_number_of_sub_expressions;
+        }
+    }
+}
+
+fn getArgMask(arg_t: type, args: []const []const u8, spec: InstructionSpec, arg_i: u1, pc: u12, labels: std.StringHashMap(Expression), allocator: std.mem.Allocator) !u16 {
+    const arg_evald = try evalExpr(args[arg_i], pc,  labels, allocator);
     if (arg_evald.val > std.math.maxInt(arg_t) and !(arg_t == u8 and arg_evald.type == .address)) {
         return error.arg_too_big;
     }
@@ -116,14 +186,14 @@ fn getArgMask(arg_t: type, args: []const []const u8, spec: InstructionSpec, arg_
     return arg_val << spec.arg_extractors[arg_i].shift_amount;
 }
 
-fn assembleInstruction(spec: InstructionSpec, args: []const []const u8, pc: u12, labels: std.StringHashMap(Expression)) !OneOrTwoBytes {
+fn assembleInstruction(spec: InstructionSpec, args: []const []const u8, pc: u12, labels: std.StringHashMap(Expression), allocator: std.mem.Allocator) !OneOrTwoBytes {
     const assembled_as_u16 = switch (spec.func) {
         .f_no_args => spec.opcode_mask,
-        .f_3 => spec.opcode_mask | try getArgMask(u3, args, spec, 0, pc, labels),
-        .f_4 => spec.opcode_mask | try getArgMask(u4, args, spec, 0, pc, labels),
-        .f_12 => spec.opcode_mask | try getArgMask(u12, args, spec, 0, pc, labels),
-        .f_3_8 => spec.opcode_mask | try getArgMask(u3, args, spec, 0, pc, labels) | try getArgMask(u8, args, spec, 1, pc, labels),
-        .f_4_8 => spec.opcode_mask | try getArgMask(u4, args, spec, 0, pc, labels) | try getArgMask(u8, args, spec, 1, pc, labels),
+        .f_3 => spec.opcode_mask | try getArgMask(u3, args, spec, 0, pc, labels, allocator),
+        .f_4 => spec.opcode_mask | try getArgMask(u4, args, spec, 0, pc, labels, allocator),
+        .f_12 => spec.opcode_mask | try getArgMask(u12, args, spec, 0, pc, labels, allocator),
+        .f_3_8 => spec.opcode_mask | try getArgMask(u3, args, spec, 0, pc, labels, allocator) | try getArgMask(u8, args, spec, 1, pc, labels, allocator),
+        .f_4_8 => spec.opcode_mask | try getArgMask(u4, args, spec, 0, pc, labels, allocator) | try getArgMask(u8, args, spec, 1, pc, labels, allocator),
     };
     if (spec.opcode_string.len == 8) {
         return .{ .one = @intCast(assembled_as_u16 >> 8) };
@@ -132,7 +202,7 @@ fn assembleInstruction(spec: InstructionSpec, args: []const []const u8, pc: u12,
     } else unreachable;
 }
 
-fn getLabels(lines: []ParsedLine) !std.StringHashMap(Expression) {
+fn getLabels(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringHashMap(Expression) {
     var labels_to_values = std.StringHashMap(Expression).init(std.heap.page_allocator);
     var addr: u12 = 0;
     for (lines) |line| {
@@ -151,7 +221,7 @@ fn getLabels(lines: []ParsedLine) !std.StringHashMap(Expression) {
                 addr += 1;
             },
             .origin => |new_pc_expr| {
-                const new_pc = (try evalExpr(new_pc_expr, addr, null)).val;
+                const new_pc = (try evalExpr(new_pc_expr, addr, null, allocator)).val;
                 if (new_pc > std.math.maxInt(u12)) {
                     return error.origin_number_too_big;
                 }
@@ -311,7 +381,7 @@ pub fn main() !void {
     }
     const parsed_lines_macros_replaced = try replaceMacros(parsed_lines_al.items, allocator);
 
-    var labels = try getLabels(parsed_lines_macros_replaced);
+    var labels = try getLabels(parsed_lines_macros_replaced, allocator);
     var it = labels.iterator();
     while (it.next()) |entry| {
         std.debug.print("{s} -> {!}\n", .{entry.key_ptr.*, entry.value_ptr.*});
@@ -321,7 +391,7 @@ pub fn main() !void {
         switch (line) {
             .instruction => |inst_line| {
                 const spec = instructionFromMnemonic(inst_line.mnemonic) orelse return error.no_such_instruction;
-                const assembled_instruction = try assembleInstruction(spec, inst_line.args, program_counter, labels);
+                const assembled_instruction = try assembleInstruction(spec, inst_line.args, program_counter, labels, allocator);
                 switch (assembled_instruction) {
                     .one => |inst| {
                         try add_byte_at_pc(&assembled_bytes, inst, program_counter);
@@ -336,7 +406,7 @@ pub fn main() !void {
                 }
             },
             .number => |num_line| {
-                const num_val = (try evalExpr(num_line.expr, program_counter, labels)).val;
+                const num_val = (try evalExpr(num_line.expr, program_counter, labels, allocator)).val;
                 if (num_val > std.math.maxInt(u8)) {
                     return error.standalone_number_too_big;
                 }
@@ -344,10 +414,10 @@ pub fn main() !void {
                 program_counter += 1;
             },
             .equate => |equate_line| {
-                try labels.put(equate_line.name, try evalExpr(equate_line.expr, program_counter, labels));
+                try labels.put(equate_line.name, try evalExpr(equate_line.expr, program_counter, labels, allocator));
             },
             .origin => |new_pc_expr| {
-                const new_pc = (try evalExpr(new_pc_expr, program_counter, labels)).val;
+                const new_pc = (try evalExpr(new_pc_expr, program_counter, labels, allocator)).val;
                 if (new_pc > std.math.maxInt(u12)) {
                     return error.origin_number_too_big;
                 }
