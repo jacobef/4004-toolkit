@@ -129,10 +129,7 @@ def get_label(line: str) -> str | None:
     if possible_label[-1] == ",":
         label = possible_label[:-1]
         if label[0] in "1234567890":
-            raise Exception("Invalid Label: begins with int instead of char")
-        for i in label:
-            if not i.isalnum():
-                raise Exception(f"Invalid Label: contains {i} when only alphanumeric chars are allowed.")
+            raise Exception("Invalid label: begins with number")
         return label
     else:
         return None
@@ -509,13 +506,13 @@ def assemble(filename: str) -> bytearray:
             for line2 in f"""
 / Push the first nibble of the return address
 *+14 -> 8R _ _
-JMS P8R
+JMS PUSH_4_FROM_8R
 / Push the second nibble
 *+10 -> _ 8R _
-JMS P8R
+JMS PUSH_4_FROM_8R
 / Push the third nibble
 *+6 -> _ _ 8R
-JMS P8R
+JMS PUSH_4_FROM_8R
 / Jump to the function
 JUN {line.split(" ")[1]}
 """.split("\n"):
