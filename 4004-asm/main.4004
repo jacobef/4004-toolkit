@@ -55,7 +55,7 @@ FIM 0P '\s'
 #CALL PRINT_CHAR
 
 / Keyboard polling loop
-POLL_KB, NOP
+POLL_KB,
     #CALL READ_CHAR
     / Save 0P (the received character) in 6P
     0P -> 6P
@@ -66,7 +66,7 @@ POLL_KB, NOP
     JCN Z? DWT
     JUN DEL
     / Write the character to the monitor
-    DWT, NOP
+    DWT,
     6P -> 0P
     #CALL PRINT_CHAR
     / Check if the character is enter
@@ -77,7 +77,7 @@ POLL_KB, NOP
     JCN Z? NRM
     JUN ENT
 
-    NRM, NOP
+    NRM,
         / Put the command-end pointer in 0R-2R
         FIM 0P 3
         JMS STACK_BOTTOM_PEEK_12
@@ -114,8 +114,8 @@ POLL_KB, NOP
 
         JUN POLL_KB
 
-    ENT, NOP
-        / #CALL FIND_NEXT_SPACE
+    ENT,
+        / Call FIND_NEXT_SPACE
             / Get the command start address and save it to the stack
             FIM 0P 0
             JMS STACK_BOTTOM_PEEK_12
@@ -126,10 +126,10 @@ POLL_KB, NOP
             0R 1R 2R -> 3R 4R 5R
             / Put the command start address in 0R-2R
             JMS POP_12
-            / Do the #CALL and push the result (first_space) to the stack
+            / Do the call and push the result (first_space) to the stack
             #CALL FIND_NEXT_SPACE
             JMS PUSH_12
-        / #CALL GET_CMD_CODE
+        / Call GET_CMD_CODE
             / Load cmd_start into 6R-8R
             FIM 0P 0
             JMS STACK_BOTTOM_PEEK_12
@@ -151,19 +151,19 @@ POLL_KB, NOP
             LD 0R
             JCN NZ? CEO
             JUN NCM
-        / #CALL echo
-            CEO, NOP
+        / Call echo
+            CEO,
             / Copy the command-end pointer into 3R-5R
             FIM 0P 3
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 3R 4R 5R
             / Pop first_space into 0R-2R
             JMS POP_12
-            / Do the #CALL
+            / Do the call
             #CALL ECHO
             JUN SLB
 
-        NCM, NOP
+        NCM,
         FIM 0P 'n'
         #CALL PRINT_CHAR
         FIM 0P 'f'
@@ -187,7 +187,7 @@ POLL_KB, NOP
             #CALL ECHO
 
         JMS POP_12 / Pop first_space from the stack
-        SLB, NOP / "Standard loop back"
+        SLB, / "Standard loop back"
             / Reset the command-end pointer to the start of the command
                 / Put the command start address in 2R-4R
                 FIM 0P 0
@@ -204,7 +204,7 @@ POLL_KB, NOP
             FIM 0P '\s'
             #CALL PRINT_CHAR
             JUN POLL_KB
-    DEL, NOP
+    DEL,
         / Push the command start pointer to the stack
         FIM 0P 0
         JMS STACK_BOTTOM_PEEK_12
@@ -224,7 +224,7 @@ POLL_KB, NOP
         SAL, FIM 0P '\a'
         #CALL PRINT_CHAR
         JUN POLL_KB
-        DDL, NOP / "Do delete"
+        DDL, / "Do delete"
         / Display the delete
         FIM 0P '\d'
         #CALL PRINT_CHAR
@@ -264,7 +264,7 @@ INIT_END_PTR, LDM EPB
     JUN RETURN
 
 / MALLOC(nibs: 12) -> addr: 12 - Allocate that many nibbles of memory
-MALLOC, NOP
+MALLOC,
     / Put the argument into 3R-5R
     0R 1R 2R -> 3R 4R 5R
     / Put the end pointer into 0R-2R
@@ -311,7 +311,7 @@ MALLOC, NOP
 
 / PUSH_4(val: 4) - Push a 4-bit value to the stack.
 / Does not clobber any registers (aside from incrementing 7P, which is the stack counter).
-PUSH_4, NOP
+PUSH_4,
     / Select RAM bank 0
     LDM 0
     DCL
@@ -328,7 +328,7 @@ PUSH_4, NOP
 
 / PUSH_4_FROM_8R(val: 4) - Like PUSH_4, but takes the argument from 8R.
 / Only used for the #CALL macro.
-PUSH_4_FROM_8R, NOP
+PUSH_4_FROM_8R,
     / Select RAM bank 0
     LDM 0
     DCL
@@ -345,7 +345,7 @@ PUSH_4_FROM_8R, NOP
 
 / PUSH_12(val: 12) - Push a 12-bit address to the stack.
 / Does not clobber any registers except 0R-2R (and 7P)
-PUSH_12, NOP
+PUSH_12,
     JMS PUSH_4
     1R -> 0R
     JMS PUSH_4
@@ -355,7 +355,7 @@ PUSH_12, NOP
 
 / POP_12() -> 12 - Pop a 12-bit address from the stack.
 / Doesn't clobber any registers (except 0R-2R and 7P)
-POP_12, NOP
+POP_12,
     JMS POP_4
     0R -> 2R
     JMS POP_4
@@ -394,7 +394,7 @@ STACK_BOTTOM_WRITE_12, LDM 0
     BBL 0
 
 / STACK_BOTTOM_PEEK_4(n: 8) -> val: 4 - Peek at the bottom of the stack plus n.
-/ For example, #CALLing it with 1 will look at the 2nd-to-bottom thing on the stack.
+/ For example, calling it with 1 will look at the 2nd-to-bottom thing on the stack.
 / Doesn't clobber any registers.
 STACK_BOTTOM_PEEK_4, LDM 0
     DCL
@@ -426,10 +426,10 @@ STACK_BOTTOM_PEEK_12, LDM 0
     XCH 2R
     BBL 0
 
-/ STACK_TOP_PEEK_4(n: 8) -> val: 4 - Peek at the top of the stack minus (n-1). #CALLing it with 0 is invalid.
-/ For example, #CALLing it with 1 will look at the top of the stack, and #CALLing it with 2 will look at the second-to-top of the stack.
+/ STACK_TOP_PEEK_4(n: 8) -> val: 4 - Peek at the top of the stack minus (n-1). Calling it with 0 is invalid.
+/ For example, calling it with 1 will look at the top of the stack, and calling it with 2 will look at the second-to-top of the stack.
 / Does not clobber any registers except 0P (and 7P)
-STACK_TOP_PEEK_4, NOP
+STACK_TOP_PEEK_4,
     / Subtract the argument from the stack pointer and store it in 0P
     CLC
     LD 15R
@@ -450,7 +450,7 @@ STACK_TOP_PEEK_4, NOP
     BBL 0
 
 / STACK_TOP_PEEK_12(n: 8) -> val: 12 - Peek at the address starting at the top of the stack minus (n-1).
-STACK_TOP_PEEK_12, NOP
+STACK_TOP_PEEK_12,
     / Subtract the argument from the stack pointer and store it in 2P
     LD 15R
     CLC
@@ -482,13 +482,14 @@ STACK_TOP_PEEK_12, NOP
     BBL 0
 
 / POP_4() -> val: 4 - Pop from the stack. Does not clobber any registers (aside from decrementing 7P, and returning to 0R)
-POP_4, NOP
+POP_4,
     / Decrement the stack counter
     7P -= 1
     JCN C? DRD / Crash if stack underflow
     JUN STACK_UNDERFLOW
     / Do the read; will always be in RAM bank 0
-    DRD, LDM 0
+    DRD,
+    LDM 0
     DCL
     SRC 7P
     RDM
@@ -496,7 +497,7 @@ POP_4, NOP
     BBL 0
 
 / ECHO(first_space: 12, cmd_end: 12) - Print the argument
-ECHO, NOP
+ECHO,
     / Save 0R in 6R
     0R -> 6R
     / Save 11R-13R to the stack
@@ -529,10 +530,9 @@ ECHO, NOP
     JUN REO
 
     / Otherwise, increment our counter so it's at the start of the argument
-    NRT, NOP
-    11R 12R 13R += 2
+    NRT, 11R 12R 13R += 2
 
-    PRL, NOP
+    PRL,
         / Break if we've reached cmd_end
             FIM 0P 3
             JMS STACK_TOP_PEEK_12
@@ -542,7 +542,7 @@ ECHO, NOP
             JCN Z? PCC
             JUN REO
         / Print the character at the counter
-            PCC, NOP
+            PCC,
             / Load first nibble into 0R
             LD 11R
             DCL
@@ -563,7 +563,7 @@ ECHO, NOP
             11R 12R 13R += 1
         JUN PRL
 
-    REO, NOP
+    REO,
         / Remove cmd_end from the stack
         JMS POP_12
         / Display newline
@@ -580,7 +580,7 @@ ECHO, NOP
 
 / FIND_NEXT_NON_SPACE(cmd_start: 12, cmd_end: 12) -> space_addr: 12 - Find the next non-space.
 / Returns the address of the first non-space, or the command-end pointer if there are no spaces.
-FIND_NEXT_NON_SPACE, NOP
+FIND_NEXT_NON_SPACE,
     / Save 0R
     0R -> 6R
     / Save 10R-13R to the stack
@@ -600,7 +600,7 @@ FIND_NEXT_NON_SPACE, NOP
     3R 4R 5R -> 0R 1R 2R
     JMS PUSH_12
 
-    NSL, NOP
+    NSL,
         / Load the command-end pointer into 0R-2R (first argument to CMP_12)
         FIM 0P 3
         JMS STACK_TOP_PEEK_12
@@ -612,7 +612,7 @@ FIND_NEXT_NON_SPACE, NOP
         JCN Z? CKN
         JUN RFS
         / Otherwise, check if the character is a space
-            CKN, NOP
+            CKN,
             / Load the character into 0P
                 / Save first 4 bits into 10R
                 LD 11R
@@ -642,11 +642,11 @@ FIND_NEXT_NON_SPACE, NOP
                 JCN NZ? KG2
                 JUN RFN
         / Otherwise, keep going
-        KG2, NOP
+        KG2,
         / Increment the counter by a character
             11R 12R 13R += 2
         JUN NSL
-    RFN, NOP
+    RFN,
         / Remove cmd_end from the stack
         JMS POP_12
         / Save the counter to 3R-5R
@@ -668,7 +668,7 @@ FIND_NEXT_NON_SPACE, NOP
 
 / FIND_NEXT_SPACE(cmd_start: 12, cmd_end: 12) -> space_addr: 12 - Find the next space.
 / Returns the address of the first space, or the command-end pointer if there are no spaces.
-FIND_NEXT_SPACE, NOP
+FIND_NEXT_SPACE,
     / Save 0R
     0R -> 6R
     / Save 10R-13R to the stack
@@ -688,7 +688,7 @@ FIND_NEXT_SPACE, NOP
     3R 4R 5R -> 0R 1R 2R
     JMS PUSH_12
 
-    SPL, NOP
+    SPL,
         / Load the command-end pointer into 0R-2R (first argument to CMP_12)
         FIM 0P 3
         JMS STACK_TOP_PEEK_12
@@ -700,7 +700,7 @@ FIND_NEXT_SPACE, NOP
         JCN Z? CKS
         JUN RFS
         / Otherwise, check if the character is a space
-            CKS, NOP
+            CKS,
             / Load the character into 0P
                 / Save first 4 bits into 10R
                 LD 11R
@@ -730,14 +730,14 @@ FIND_NEXT_SPACE, NOP
                 JCN Z? KPG
                 JUN RFS
         / Otherwise, keep going
-        KPG, NOP
+        KPG,
         / Increment the counter by a character
             11R 12R 13R -> 0R 1R 2R
             #CALL INC_12
             #CALL INC_12
             0R 1R 2R -> 11R 12R 13R
         JUN SPL
-    RFS, NOP
+    RFS,
         / Remove cmd_end from the stack
         JMS POP_12
         / Save the counter to 3R-5R
@@ -758,7 +758,7 @@ FIND_NEXT_SPACE, NOP
 
 
 / GET_CMD_CODE(cmd_start: 12, first_space: 12) -> code: 8 - Detect command; returns 1 if echo, 0 otherwise
-GET_CMD_CODE, NOP
+GET_CMD_CODE,
     / Save 0R
     0R -> 6R
     / Save 10R-13R to the stack
@@ -794,7 +794,7 @@ GET_CMD_CODE, NOP
     JUN RT0
 
     / Compare the string with "echo"
-    CKE, NOP
+    CKE,
     11R 12R 13R -> 0R 1R 2R
     EST -> 3R 4R 5R
     4 -> 6R 7R
@@ -803,12 +803,12 @@ GET_CMD_CODE, NOP
     LD 0R
     JCN Z? RT0
     / Otherwise, return 1
-    RT1, NOP
+    RT1,
         1 -> 0R
         JUN RTD
-    RT0, NOP
+    RT0,
         0 -> 0R
-    RTD, NOP
+    RTD,
         0R -> 1R
         JMS POP_4
         0R -> 13R
@@ -821,14 +821,15 @@ GET_CMD_CODE, NOP
         1R -> 0R
         JUN RETURN
 
-    EST, 'e'
-    'c'
-    'h'
-    'o'
+    EST,
+        'e'
+        'c'
+        'h'
+        'o'
 
 / CMP_STRS_UNCHKD(dram_begin: 12, pram_begin: 12, len: 8)
 / Compare strings unchecked
-CMP_STRS_UNCHKD, NOP
+CMP_STRS_UNCHKD,
     / Save 0R
     0R -> 8R
     / Save 10R-13R
@@ -843,7 +844,7 @@ CMP_STRS_UNCHKD, NOP
     / Restore 0R
     8R -> 0R
 
-    CKL, NOP
+    CKL,
         / Return true if len == 0
         LD 6R
         JCN NZ? DTL
@@ -851,10 +852,10 @@ CMP_STRS_UNCHKD, NOP
         JCN NZ? DTL
         JUN CRT
         / Decrement len
-        DTL, NOP
+        DTL,
         6R 7R -= 1
 
-        CPC, NOP
+        CPC,
         / Load the DRAM character into 5P
             / First nibble
             LD 0R
@@ -942,17 +943,19 @@ CMP_STRS_UNCHKD, NOP
 
 
 / Increment a 12-bit number - INC_12(num: 12) -> plus_1: 12
-INC_12, NOP
+INC_12,
     0R 1R 2R += 1
     JUN RETURN
 
 / Decrement a 12-bit number - DEC_12(num: 12) -> minus_1: 12
-DEC_12, CLC
+DEC_12,
+    CLC
     0R 1R 2R -= 1
     JUN RETURN
 
 / Compare characters (8 bits) - CMP_8(char1: 8, char2: 8) -> same: 4
-CMP_8, LD 0R
+CMP_8,
+    LD 0R
     CLC
     SUB 2R
     JCN NZ? NEQ
@@ -968,7 +971,8 @@ CMP_8, LD 0R
     JUN RETURN
 
 / Compare 12-bit numbers - CMP_12(num1: 12, num2: 12) -> same: 4
-CMP_12, LD 0R
+CMP_12,
+    LD 0R
     CLC
     SUB 3R
     JCN NZ? NE2
@@ -988,7 +992,7 @@ CMP_12, LD 0R
         JUN RETURN
 
 / Read from keyboard - READ_CHAR() -> char: 8
-READ_CHAR, NOP
+READ_CHAR,
     / Flip kb_done_receiving_cache
     FIM 0P 9
     JMS STACK_BOTTOM_PEEK_4
@@ -1011,7 +1015,7 @@ READ_CHAR, NOP
     FIM 0P 8
     JMS STACK_BOTTOM_PEEK_4
     / Wait for kb_char_ready to flip
-    WCR, NOP
+    WCR,
         / Read kb_char_ready
         2 -> 2R
         SRC 1P
@@ -1042,7 +1046,7 @@ READ_CHAR, NOP
     JUN RETURN
 
 / Write Char to monitor - PRINT_CHAR(char: 8)
-PRINT_CHAR, NOP
+PRINT_CHAR,
     / Set the character lines
     4 -> 2R
     SRC 1P
@@ -1073,7 +1077,7 @@ PRINT_CHAR, NOP
     FIM 0P 7
     JMS STACK_BOTTOM_PEEK_4
     / Wait for monitor_done_displaying to flip
-    WDD, NOP
+    WDD,
         / Read monitor_done_displaying
         7 -> 2R
         SRC 1P
@@ -1095,7 +1099,7 @@ PRINT_CHAR, NOP
     JUN RETURN
 
 
-RETURN, NOP
+RETURN,
     / Save 0R to the stack. We'll use 0R, 8R, and 9R for all operations within RETURN.
     JMS PUSH_4
 
@@ -1208,7 +1212,7 @@ RETURN, NOP
     RJ2, NOP
 
 
-STACK_UNDERFLOW, NOP
+STACK_UNDERFLOW,
     0 -> 7P
     FIM 0P 'S'
     #CALL PRINT_CHAR
@@ -1218,7 +1222,7 @@ STACK_UNDERFLOW, NOP
     #CALL PRINT_CHAR
     JUN FREEZE
 
-STACK_OVERFLOW, NOP
+STACK_OVERFLOW,
     0 -> 7P
     FIM 0P 'S'
     #CALL PRINT_CHAR
@@ -1228,7 +1232,7 @@ STACK_OVERFLOW, NOP
     #CALL PRINT_CHAR
     JUN FREEZE
 
-MALLOC_OVERFLOW, NOP
+MALLOC_OVERFLOW,
     0 -> 7P
     FIM 0P 'M'
     #CALL PRINT_CHAR

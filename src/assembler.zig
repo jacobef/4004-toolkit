@@ -264,13 +264,14 @@ fn assembleInstruction(spec: InstructionSpec, args: []const Expression, pc: u12)
 fn getLabelTypes(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringHashMap(CPUArgType) {
     var labels_to_types = std.StringHashMap(CPUArgType).init(allocator);
     for (lines) |line| {
-        if (line.label) |label| {
-            try labels_to_types.put(label, .address);
+        switch (line) {
+            .label => |label| try labels_to_types.put(label, .address),
+            else => doNothing()
         }
     }
 
     for (lines) |line| {
-        switch (line.rest) {
+        switch (line) {
             .equate => |eq_line| {
                 try labels_to_types.put(eq_line.name, try getExprType(eq_line.expr, labels_to_types, allocator));
             },
@@ -285,19 +286,22 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
     var label_values = std.StringHashMap(Expression).init(allocator);
     var addr: u12 = 0;
     for (lines) |line| {
-        if (line.label) |label| {
-            if (label_values.contains(label)) {
-                return error.label_redefinition;
-            } else {
-                try label_values.put(label, .{.val = addr, .type = .address });
-                std.debug.print("{s} = {}\n", .{label, addr});
-            }
+        switch (line) {
+            .label => |label| {
+                if (label_values.contains(label)) {
+                    return error.label_redefinition;
+                } else {
+                    try label_values.put(label, .{.val = addr, .type = .address });
+                    std.debug.print("{s} = {}\n", .{label, addr});
+                }
+            },
+            else => doNothing()
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
     addr = 0;
     for (lines) |line| {
-        switch (line.rest) {
+        switch (line) {
             .equate => |eq_line| {
                 if (label_values.contains(eq_line.name)) {
                     return error.label_redefinition;
@@ -353,7 +357,7 @@ fn getArrowLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocat
         }
     }
 
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
@@ -402,7 +406,7 @@ fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
         }
     }
 
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
@@ -489,13 +493,13 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
 
     // Remove the last 'CMC' instruction
     _ = out.pop();
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 
 
 fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
-    switch (line.rest) {
+    switch (line) {
         .instruction => |inst_line| {
             const inst = instructionFromMnemonic(inst_line.mnemonic) orelse return error.invalid_mnemonic;
             return pc + @as(u12, @intCast(inst.opcode_string.len / 8));
@@ -531,6 +535,7 @@ fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
             };
         },
         .equate => return pc,
+        .label => return pc
     }
 }
 
@@ -551,7 +556,7 @@ fn replaceSourceDestLines(lines: []ExprsEvaldLine, allocator: std.mem.Allocator)
             else => try out.append(line)
         }
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
@@ -569,6 +574,7 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
         ));
         return try parseLines(out.items, allocator);
     } else {
+        std.debug.print("no such macro: {s}\n", .{name});
         return error.no_such_macro;
     }
 }
@@ -576,20 +582,15 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
 fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLine {
     var out = std.ArrayList(ParsedLine).init(allocator);
     for (lines) |line| {
-        switch (line.rest) {
+        switch (line) {
             .macro => |macro_line| {
                 const replacement_lines = try getMacroReplacement(macro_line.name, macro_line.args, allocator);
-                if (replacement_lines.len > 0) {
-                    if (line.label) |label| {
-                        replacement_lines[0].label = label;
-                    }
-                }
                 try out.appendSlice(try replaceMacros(replacement_lines, allocator));
             },
             else => try out.append(line)
         }
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 {
@@ -598,7 +599,7 @@ fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 
     while (word_iterator.next()) |word| {
         try out.append(word);
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 const TypedExpr = struct { str: []const u8, type: CPUArgType };
@@ -620,12 +621,7 @@ const EvaldSourceDestLine = struct {
     dest: []const ?u4,
 };
 
-const ParsedLine = struct {
-    label: ?[]const u8,
-    rest: ParsedLineNoLabel
-};
-
-const ParsedLineNoLabel = union(enum) {
+const ParsedLine = union(enum) {
     instruction: struct { mnemonic: []const u8, args: []const []const u8 },
     macro: struct { name: []const u8, args: []const []const u8 },
     arrow: UnevaldSourceDestLine,
@@ -634,21 +630,18 @@ const ParsedLineNoLabel = union(enum) {
     expr: []const u8,
     equate: struct { name: []const u8, expr: []const u8 },
     origin: []const u8,
+    label: []const u8
 };
 
-const TypedLine = struct {
-    label: ?[]const u8,
-    rest: TypedLineNoLabel
-};
-
-const TypedLineNoLabel = union(enum) {
+const TypedLine = union(enum) {
     instruction: struct { mnemonic: []const u8, args: []const TypedExpr },
     arrow: TypedSourceDestLine,
     add_assign: TypedSourceDestLine,
     sub_assign: TypedSourceDestLine,
     expr: TypedExpr,
     equate: struct { name: []const u8, expr: TypedExpr },
-    origin: TypedExpr
+    origin: TypedExpr,
+    label: []const u8
 };
 
 const ExprsEvaldLine = union(enum) {
@@ -660,59 +653,59 @@ const ExprsEvaldLine = union(enum) {
     origin: u12
 };
 
-fn parseLine(line: []const u8, allocator: std.mem.Allocator) !?ParsedLine {
+fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
+    var out = std.ArrayList(ParsedLine).init(allocator);
+
     var comment_remover = std.mem.splitScalar(u8, line, '/');
     const words = try getWords(comment_remover.first(), allocator);
 
     const label = if (words.len > 0 and words[0][words[0].len - 1] == ',') words[0][0..words[0].len-1] else null;
     const words_without_label = if (label) |_| words[1..] else words;
+    if (label) |label_| try out.append(.{.label = label_});
     if (words_without_label.len == 0) {
-        return null;  // TODO program is bugged for lines with just labels; split by commas as well as newlines or something
+        return try out.toOwnedSlice();
     }
 
     for (words_without_label, 0..) |word, i| {
         if (std.mem.eql(u8, word, "->")) {
-            return .{ .label = label, .rest = .{.arrow =
-            .{ .source = words_without_label[0..i], .dest = words_without_label[i+1..] } }};
+            try out.append(.{.arrow = .{ .source = words_without_label[0..i], .dest = words_without_label[i+1..] }});
+            return try out.toOwnedSlice();
         } else if (std.mem.eql(u8, word, "+=")) {
-            return .{ .label = label, .rest = .{.add_assign =
-            .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] } }};
+            try out.append(.{.add_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] }});
+            return try out.toOwnedSlice();
         } else if (std.mem.eql(u8, word, "-=")) {
-            return .{ .label = label, .rest = .{.sub_assign =
-            .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] } }};
+            try out.append(.{.sub_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] }});
+            return try out.toOwnedSlice();
         }
     }
 
-    var parsed_line_no_label: ParsedLineNoLabel = undefined;
     if (std.mem.eql(u8, words_without_label[0], "=")) {
         if (words_without_label.len != 2) {
             return error.origin_wrong_number_of_expressions;
         }
-        parsed_line_no_label = .{ .origin = words_without_label[1] };
+        try out.append(.{ .origin = words_without_label[1] });
     } else if (words_without_label.len >= 2 and std.mem.eql(u8, words_without_label[1], "=")) {
         if (words_without_label.len != 3) {
             return error.equate_wrong_number_of_expressions;
         }
-        parsed_line_no_label = .{ .equate = .{ .name = words_without_label[0], .expr = words_without_label[2] } };
+        try out.append(.{ .equate = .{ .name = words_without_label[0], .expr = words_without_label[2] } });
     } else if (words_without_label[0][0] == '#') {
-        parsed_line_no_label = .{ .macro = .{ .name = words_without_label[0][1..], .args = words_without_label[1..] } };
+        try out.append(.{ .macro = .{ .name = words_without_label[0][1..], .args = words_without_label[1..] } });
     } else if (instructionFromMnemonic(words_without_label[0])) |_| {
-        parsed_line_no_label = .{ .instruction = .{ .mnemonic = words_without_label[0], .args = words_without_label[1..] } };
+        try out.append(.{ .instruction = .{ .mnemonic = words_without_label[0], .args = words_without_label[1..] } });
     } else {  // TODO detect e.g. CALL ABC as an instruction (with an invalid mnemonic)
-        parsed_line_no_label = .{ .expr = words_without_label[0] };
+        try out.append(.{ .expr = words_without_label[0] });
     }
-    return .{ .label = label, .rest = parsed_line_no_label };
+    return try out.toOwnedSlice();
 }
 
 fn parseLines(input_chars: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
-    var line_iterator = std.mem.tokenizeScalar(u8, input_chars, '\n');
+    var line_iterator = std.mem.tokenizeAny(u8, input_chars, "\n");  // TODO avoid ',' character constants
     var out = std.ArrayList(ParsedLine).init(allocator);
     while (line_iterator.next()) |line| {
-        if (try parseLine(line, allocator)) |line_parsed| {
-            try out.append(line_parsed);
-        }
+        try out.appendSlice(try parseLine(line, allocator));
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedSourceDestLine {
@@ -765,8 +758,7 @@ fn asTypedExpr(expr: []const u8, label_types: std.StringHashMap(CPUArgType), all
 }
 
 fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedLine {
-    var line_no_label: TypedLineNoLabel = undefined;
-    switch (line.rest) {
+    switch (line) {
         .instruction => |inst_line| {
             var typed_args = std.ArrayList(TypedExpr).init(allocator);
             const spec = instructionFromMnemonic(inst_line.mnemonic) orelse return error.no_such_instruction;
@@ -775,13 +767,13 @@ fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), al
                 if (arg_type != expected_type) return error.type_mismatch;
                 try typed_args.append(.{.str = arg, .type = arg_type});
             }
-            line_no_label = .{.instruction = .{.mnemonic = inst_line.mnemonic, .args = try typed_args.toOwnedSlice() }};
+            return .{.instruction = .{.mnemonic = inst_line.mnemonic, .args = try typed_args.toOwnedSlice() }};
         },
         .expr => |expr_str| {
-            line_no_label = .{.expr = try asTypedExpr(expr_str, label_types, allocator)};
+            return.{.expr = try asTypedExpr(expr_str, label_types, allocator)};
         },
         .equate => |equate_line| {
-            line_no_label = .{
+            return .{
                 .equate = .{
                     .name = equate_line.name,
                     .expr = .{
@@ -791,20 +783,22 @@ fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), al
             };
         },
         .origin => |new_pc_expr| {
-            line_no_label = .{.origin = try asTypedExpr(new_pc_expr, label_types, allocator)};
+            return .{.origin = try asTypedExpr(new_pc_expr, label_types, allocator)};
         },
         .macro => std.debug.panic("macro was not replaced before evalExprsInLine call\n", .{}),
         .arrow => |sd_line| {
-            line_no_label = .{.arrow = try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{.arrow = try getTypedSourceDest(sd_line, label_types, allocator)};
         },
         .add_assign => |sd_line| {
-            line_no_label = .{.add_assign =try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{.add_assign = try getTypedSourceDest(sd_line, label_types, allocator)};
         },
         .sub_assign => |sd_line| {
-            line_no_label = .{.sub_assign = try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{.sub_assign = try getTypedSourceDest(sd_line, label_types, allocator)};
         },
+        .label => |label| {
+            return .{.label = label};
+        }
     }
-    return .{.label = line.label, .rest = line_no_label};
 }
 
 fn getTypedLines(lines: []ParsedLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) ![]TypedLine {
@@ -812,7 +806,7 @@ fn getTypedLines(lines: []ParsedLine, label_types: std.StringHashMap(CPUArgType)
     for (lines) |line| {
         try out.append(try getTypedLine(line, label_types, allocator));
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn evalExprs(exprs: []TypedExpr, allocator: std.mem.Allocator) ![]Expression {
@@ -884,7 +878,7 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
     }
 }
 
-fn getExprsEvaldLine(line: TypedLineNoLabel, pc: u12, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) !?ExprsEvaldLine {
+fn getExprsEvaldLine(line: TypedLine, pc: u12, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) !?ExprsEvaldLine {
     switch (line) {
         .add_assign => |sd_line| {
             return .{.add_assign = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator)};
@@ -908,7 +902,8 @@ fn getExprsEvaldLine(line: TypedLineNoLabel, pc: u12, label_values: std.StringHa
         },
         .origin => |new_pc_expr| {
             return .{.origin = @intCast((try evalExpr(new_pc_expr.str, pc, null, allocator)).val)};
-        }
+        },
+        .label => return null
     }
 }
 
@@ -916,13 +911,13 @@ fn getExprsEvaldLines(lines: []TypedLine, label_values: std.StringHashMap(Expres
     var out = std.ArrayList(ExprsEvaldLine).init(allocator);
     var addr: u12 = 0;
     for (lines) |line| {
-        const fully_parsed_line = try getExprsEvaldLine(line.rest, addr, label_values, allocator);
+        const fully_parsed_line = try getExprsEvaldLine(line, addr, label_values, allocator);
         if (fully_parsed_line) |nn_fp_line| {
             try out.append(nn_fp_line);
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
-    return out.items;
+    return try out.toOwnedSlice();
 }
 
 fn add_byte_at_pc(bytes: *std.ArrayList(u8), byte: u8, pc: u12) !void {
