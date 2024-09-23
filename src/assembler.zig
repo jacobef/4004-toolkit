@@ -51,7 +51,7 @@ fn evalCharExpr(expr: []const u8) !u8 {
 
 const ExprToken = union(enum) {
     subexpr: []const u8,
-    operator: enum { plus, minus, dot },
+    operator: enum { plus, minus, at },
 };
 
 fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
@@ -68,8 +68,8 @@ fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
                 try tokens.append(.{ .operator = .minus });
                 i += 1;
             },
-            '.' => {  // TODO change to @
-                try tokens.append(.{ .operator = .dot });
+            '@' => {
+                try tokens.append(.{ .operator = .at });
                 i += 1;
             },
             else => {
@@ -88,7 +88,7 @@ fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
                     if (i >= expr.len) return error.unterminated_char_literal;
                     i += 1; // Include the closing quote
                 } else {
-                    while (i < expr.len and !std.mem.containsAtLeast(u8, "+-.", 1, expr[i..i+1])) : (i += 1) {}
+                    while (i < expr.len and !std.mem.containsAtLeast(u8, "+-@", 1, expr[i..i+1])) : (i += 1) {}
                 }
                 try tokens.append(.{ .subexpr = expr[start..i] });
             },
@@ -174,7 +174,7 @@ fn getExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType), all
                 const term1_type = try getExprType(tokens[0].subexpr, label_types, allocator);
                 return term1_type;
             },
-            .dot => {
+            .at => {
                 return .number;
             }
         },
@@ -199,7 +199,7 @@ fn evalExpr(expr: []const u8, pc: u12, label_values: ?std.StringHashMap(Expressi
                 const term2 = try evalExpr(tokens[2].subexpr, pc, label_values, allocator);
                 return .{.val = term1.val-term2.val, .type = term1.type};
             },
-            .dot => {
+            .at => {
                 const num = try evalExpr(tokens[0].subexpr, pc, label_values, allocator);
                 if (num.type != .number) {
                     return error.nibble_from_non_number;
