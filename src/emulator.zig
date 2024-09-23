@@ -31,7 +31,7 @@ fn getch() u8 {
 }
 
 fn start_cpu(intel4004: *Intel4004) !void {
-    for (0..10) |_| {
+    while (true) {
         try intel4004.single_step();
     }
 }

@@ -72,7 +72,7 @@ pub const Intel4004 = struct {
     };
     pub const ProgramRAM = struct { bytes: [4096]u8, wpm_half_byte: u1 };
     pub const ROM = struct {
-        pub const IOPort = struct { in_or_out: [4]enum { in, out }, status: u4 };
+        pub const IOPort = struct { in_or_out: [4]enum { in, out }, status: u4 }; // TODO remove in_or_out
         bytes: [4096]u8,
         ports: [16]IOPort,
     };
@@ -81,7 +81,7 @@ pub const Intel4004 = struct {
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
-        std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter, std.heap.page_allocator)});
+        //std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter, std.heap.page_allocator)});
         const byte1 = self.pram.bytes[self.program_counter];
         const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;

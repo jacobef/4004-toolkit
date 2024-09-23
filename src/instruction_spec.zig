@@ -19,6 +19,7 @@ pub const InstructionSpec = struct {
     mnemonic: []const u8,
     arg_extractors: []const ArgExtractor,
     arg_types: []const CPUArgType,
+    // TODO add arg_sizes
     opcode_mask: u16,
     opcode_string: []const u8,
     func: InstructionFunction,
