@@ -72,36 +72,33 @@ POLL_KB,
     #LJCN NZ? ENTER
 
     / The key is not enter
-        / Put the command-end pointer in 0R-2R
+        / Put the command-end pointer across 0R and 1P
         FIM 0P 3
         JMS STACK_BOTTOM_PEEK_12
+        2R -> 3R
+        1R -> 2R
 
         / Write the character to memory
-        / First 4 bits
-        LD 0R
-        DCL
-        1R 2R -> 2P
-        SRC 2P
-        LD 12R
-        WRM
-
-        / Increment the cached command-end pointer
-        #CALL INC_12
-
-        / Second 4 bits
-        LD 0R
-        DCL
-        1R 2R -> 2P
-        SRC 2P
-        LD 13R
-        WRM
-
-        / Increment the cached command-end pointer
-        #CALL INC_12
+            / First nibble
+            LD 0R
+            DCL
+            SRC 1P
+            LD 12R
+            WRM
+            / Increment the cached command-end pointer
+            0R 1P += 1
+            / Second nibble
+            LD 0R
+            DCL
+            SRC 1P
+            LD 13R
+            WRM
+            / Increment the cached command-end pointer
+            0R 1P += 1
 
         / Write the incremented command-end pointer back to the stack
-        2R -> 4R
-        1R -> 3R
+        3R -> 4R
+        2R -> 3R
         0R -> 2R
         FIM 0P 3
         JMS STACK_BOTTOM_WRITE_12
@@ -607,11 +604,8 @@ FIND_NEXT_NON_SPACE,
                 RDM
                 XCH 10R
                 / Put the counter plus a nibble in 1R-3R
-                11R 12R 13R -> 0R 1R 2R
-                #CALL INC_12
-                2R -> 3R
-                1R -> 2R
-                0R -> 1R
+                11R 12R 13R -> 1R 2R 3R
+                1R 2R 3R += 1
                 / Save second 4 bits into 1R
                 LD 1R
                 DCL
@@ -692,11 +686,8 @@ FIND_NEXT_SPACE,
                 RDM
                 XCH 10R
                 / Put the counter plus a nibble in 1R-3R
-                11R 12R 13R -> 0R 1R 2R
-                #CALL INC_12
-                2R -> 3R
-                1R -> 2R
-                0R -> 1R
+                11R 12R 13R -> 1R 2R 3R
+                1R 2R 3R += 1
                 / Save second 4 bits into 1R
                 LD 1R
                 DCL
@@ -906,18 +897,6 @@ CMP_STRS_UNCHKD,
     JMS POP_4
     0R -> 10R
     0 -> 0R
-    JUN RETURN
-
-
-/ Increment a 12-bit number - INC_12(num: 12) -> plus_1: 12
-INC_12,
-    0R 1R 2R += 1
-    JUN RETURN
-
-/ Decrement a 12-bit number - DEC_12(num: 12) -> minus_1: 12
-DEC_12,
-    CLC
-    0R 1R 2R -= 1
     JUN RETURN
 
 / Compare characters (8 bits) - CMP_8(char1: 8, char2: 8) -> same: 4
