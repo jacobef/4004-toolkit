@@ -331,6 +331,7 @@ fn numRegsInDest(line: TypedSourceDestLine) !u8 {
 }
 
 fn getArrowLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
+    // TODO add solver for cases like 0R 1R 2R -> 1R 2R 3R, and detect invalid cases like 0R 1R -> 1R 0R
     var out = std.ArrayList(ExprsEvaldLine).init(allocator);
     var i: u4 = 0; // LHS number is 64 bits max, so 16 RHS registers max
     while (i < line.dest.len) : (i += 1) {
@@ -561,8 +562,8 @@ fn replaceSourceDestLines(lines: []ExprsEvaldLine, allocator: std.mem.Allocator)
 
 fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
     if (std.mem.eql(u8, name, "CALL")) {
-        var out = std.ArrayList(u8).init(allocator);
-        try out.appendSlice(try std.fmt.allocPrint(allocator,
+        if (args.len != 1) return error.not_1_call_argument;
+        const out = try std.fmt.allocPrint(allocator,
             \\*+14 -> 8R _ _
             \\JMS PUSH_4_FROM_8R
             \\*+10 -> _ 8R _
@@ -571,8 +572,28 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
             \\JMS PUSH_4_FROM_8R
             \\JUN {s}
             , .{args[0]}
-        ));
-        return try parseLines(out.items, allocator);
+        );
+        return try parseLines(out, allocator);
+    } else if (std.mem.eql(u8, name, "LJCN")) {
+        // TODO make less horrible
+        if (args.len != 2) return error.not_2_ljcn_arguments;
+        var inverted_cond: []const u8 = undefined;
+        if (std.mem.eql(u8, args[0], "C?")) {
+            inverted_cond = "NC?";
+        } else if (std.mem.eql(u8, args[0], "NC?")) {
+            inverted_cond = "C?";
+        } else if (std.mem.eql(u8, args[0], "Z?")) {
+            inverted_cond = "NZ?";
+        } else if (std.mem.eql(u8, args[0], "NZ?")) {
+            inverted_cond = "Z?";
+        } else {
+            return error.invalid_condition;
+        }
+        const out = try std.fmt.allocPrint(allocator,
+            \\JCN {s} *+4
+            \\JUN {s}
+        , .{inverted_cond, args[1]});
+        return try parseLines(out, allocator);
     } else {
         std.debug.print("no such macro: {s}\n", .{name});
         return error.no_such_macro;
@@ -700,7 +721,7 @@ fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
 }
 
 fn parseLines(input_chars: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
-    var line_iterator = std.mem.tokenizeAny(u8, input_chars, "\n");  // TODO avoid ',' character constants
+    var line_iterator = std.mem.tokenizeAny(u8, input_chars, "\n");
     var out = std.ArrayList(ParsedLine).init(allocator);
     while (line_iterator.next()) |line| {
         try out.appendSlice(try parseLine(line, allocator));
