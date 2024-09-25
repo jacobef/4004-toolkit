@@ -66,9 +66,9 @@ pub const InstructionSpec = struct {
     pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8, buf: *[2]u16) []const u16 {
         const opcode: u16 =
             if (byte2) |b2|
-            (@as(u16, byte1) << 8) | @as(u16, b2)
-        else
-            @as(u16, byte1) << 8;
+                (@as(u16, byte1) << 8) | @as(u16, b2)
+            else
+                @as(u16, byte1) << 8;
 
         const extrs = self.arg_extractors;
         switch (self.nArgs()) {
@@ -281,13 +281,7 @@ pub const instructions = struct {
 
     fn execute_rdr(cpu: *Intel4004) void {
         const port_n = (cpu.src_address & 0xF0) >> 4;
-        const port = cpu.rom.ports[port_n];
-        // for (port.in_or_out, 0..) |in_or_out, line_n| {
-        //     if (in_or_out == .out) {
-        //         std.debug.panic("attempted to read from output line (line {d}, port {d})", .{ line_n, port_n });
-        //     }
-        // }
-        cpu.accumulator = port.status;
+        cpu.accumulator = cpu.rom.ports[port_n];
         // std.debug.print("[CPU] read {} from port {}\n", .{cpu.accumulator, port_n});
         // std.time.sleep(1_000_000_00);
     }
@@ -324,7 +318,7 @@ pub const instructions = struct {
 
     fn execute_wrr(cpu: *Intel4004) void {
         const port_n = (cpu.src_address & 0xF0) >> 4;
-        cpu.rom.ports[port_n].status = cpu.accumulator;
+        cpu.rom.ports[port_n] = cpu.accumulator;
         // std.debug.print("[CPU] wrote {} to port {}\n", .{cpu.accumulator, port_n});
     }
 
@@ -349,8 +343,8 @@ pub const instructions = struct {
     }
 
     fn execute_wpm(cpu: *Intel4004) void {
-        const addr: u12 = (@as(u12, cpu.rom.ports[15].status) << 8) | @as(u12, cpu.src_address);
-        if (cpu.rom.ports[14].status & 0b0001 == 1) { // write
+        const addr: u12 = (@as(u12, cpu.rom.ports[15]) << 8) | @as(u12, cpu.src_address);
+        if (cpu.rom.ports[14] & 0b0001 == 1) { // write
             if (cpu.pram.wpm_half_byte == 0) {
                 cpu.pram.bytes[addr] = (cpu.pram.bytes[addr] & 0x0F) | (@as(u8, cpu.accumulator) << 4);
             } else {
@@ -358,9 +352,9 @@ pub const instructions = struct {
             }
         } else { // read
             if (cpu.pram.wpm_half_byte == 0) {
-                cpu.rom.ports[14].status = @as(u4, @intCast((cpu.pram.bytes[addr] & 0xF0) >> 4));
+                cpu.rom.ports[14] = @intCast((cpu.pram.bytes[addr] & 0xF0) >> 4);
             } else {
-                cpu.rom.ports[15].status = @as(u4, @intCast(cpu.pram.bytes[addr] & 0x0F));
+                cpu.rom.ports[15] = @intCast(cpu.pram.bytes[addr] & 0x0F);
             }
         }
         cpu.pram.wpm_half_byte +%= 1;

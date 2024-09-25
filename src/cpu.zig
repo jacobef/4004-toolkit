@@ -39,28 +39,6 @@ pub const Intel4004 = struct {
 
     pub fn reset(self: *Intel4004) void {
         self.* = std.mem.zeroes(Intel4004);
-
-        const port_configs = [16][4]@TypeOf(self.rom.ports[0].in_or_out[0]){
-            .{.in, .in, .in, .in},  // upper 4 bits of character input from keyboard
-            .{.in, .in, .in, .in},  // lower 4 bits of character input from keyboard
-            .{.in, .in, .in, .in},  // "char ready" input from keyboard
-            .{.out, .out, .out, .out},  // "done receiving" output to keyboard
-            .{.out, .out, .out, .out},  // upper 4 bits of character output to monitor
-            .{.out, .out, .out, .out},  // lower 4 bits of character output to monitor
-            .{.out, .out, .out, .out},  // "char ready" output to monitor
-            .{.in, .in, .in, .in},  // "done displaying" input from monitor
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-            .{.out, .out, .out, .out},
-        };
-        for (&self.rom.ports, port_configs) |*port, conf| {
-            port.in_or_out = conf;
-        }
     }
 
     pub const DataRAM = struct {
@@ -72,16 +50,14 @@ pub const Intel4004 = struct {
     };
     pub const ProgramRAM = struct { bytes: [4096]u8, wpm_half_byte: u1 };
     pub const ROM = struct {
-        pub const IOPort = struct { in_or_out: [4]enum { in, out }, status: u4 }; // TODO remove in_or_out
         bytes: [4096]u8,
-        ports: [16]IOPort,
+        ports: [16]u4,
     };
 
     const clock_speed_hz: u64 = 740_000;
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
-        //std.debug.print("{s}\n", .{try disassembler.disassemble_instruction(self, self.program_counter, std.heap.page_allocator)});
         const byte1 = self.pram.bytes[self.program_counter];
         const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
@@ -98,9 +74,5 @@ pub const Intel4004 = struct {
             .f_3_8 => |f| f(self, @intCast(args[0]), @intCast(args[1])),
             .f_4_8 => |f| f(self, @intCast(args[0]), @intCast(args[1])),
         }
-
-        // for (0..nops_per_cycle) |_| {
-        //     asm volatile ("" ::: "memory");
-        // }
     }
 };
