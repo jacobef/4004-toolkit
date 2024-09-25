@@ -86,13 +86,11 @@ pub fn main() !void {
         .char_port_high = &intel4004.rom.ports[0],
         .char_port_low = &intel4004.rom.ports[1],
         .char_ready_port = &intel4004.rom.ports[2],
-        .done_receiving_port = &intel4004.rom.ports[3],
     };
     var monitor = Monitor {
         .char_port_high = &intel4004.rom.ports[4],
         .char_port_low = &intel4004.rom.ports[5],
         .char_ready_port = &intel4004.rom.ports[6],
-        .done_displaying_port = &intel4004.rom.ports[7]
     };
     var lock = std.atomic.Value(bool).init(false);
 
