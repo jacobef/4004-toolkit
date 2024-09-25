@@ -32,8 +32,6 @@ fn evalCharExpr(expr: []const u8) !u8 {
         return std.ascii.control_code.del;
     } else if (std.mem.eql(u8, inner_char, "\\n")) {
         return '\n';
-    } else if (std.mem.eql(u8, inner_char, "\\s")) {
-        return ' ';
     } else if (std.mem.eql(u8, inner_char, "\\t")) {
         return '\t';
     } else if (std.mem.eql(u8, inner_char, "\\\\")) {
@@ -615,11 +613,38 @@ fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLin
 }
 
 fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 {
-    var word_iterator = std.mem.tokenizeScalar(u8, line, ' ');
     var out = std.ArrayList([]const u8).init(allocator);
-    while (word_iterator.next()) |word| {
-        try out.append(word);
+    var in_quote = false;
+    var after_backslash = false;
+    var word_start: usize = 0;
+
+    var i: usize = 0;
+    while (i < line.len) {
+        const char = line[i];
+
+        if (after_backslash) {
+            after_backslash = false;
+        } else if (char == '\\') {
+            after_backslash = true;
+        } else if (char == '\'' and !after_backslash) {
+            in_quote = !in_quote;
+        } else if (char == '/' and !in_quote) {
+            // Start of a comment; ignore the rest of the line
+            break;
+        } else if (std.ascii.isWhitespace(char) and !in_quote) {
+            if (i > word_start) {
+                try out.append(line[word_start..i]);
+            }
+            word_start = i + 1; // Move past the whitespace
+        }
+
+        i += 1;
     }
+    // Append the last word if any
+    if (i > word_start) {
+        try out.append(line[word_start..i]);
+    }
+
     return try out.toOwnedSlice();
 }
 
@@ -677,8 +702,7 @@ const ExprsEvaldLine = union(enum) {
 fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
     var out = std.ArrayList(ParsedLine).init(allocator);
 
-    var comment_remover = std.mem.splitScalar(u8, line, '/');
-    const words = try getWords(comment_remover.first(), allocator);
+    const words = try getWords(line, allocator);
 
     const label = if (words.len > 0 and words[0][words[0].len - 1] == ',') words[0][0..words[0].len-1] else null;
     const words_without_label = if (label) |_| words[1..] else words;

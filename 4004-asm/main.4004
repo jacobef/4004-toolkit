@@ -37,7 +37,7 @@ JMS PUSH_4 / 5
 / Write "$ " to the monitor
 FIM 0P '$'
 #CALL PRINT_CHAR
-FIM 0P '\s'
+FIM 0P ' '
 #CALL PRINT_CHAR
 
 / Keyboard polling loop
@@ -149,7 +149,7 @@ POLL_KB,
         #CALL PRINT_CHAR
         FIM 0P ':'
         #CALL PRINT_CHAR
-        FIM 0P '\s'
+        FIM 0P ' '
         #CALL PRINT_CHAR
         / Print the command
             / Load cmd_start into 6R-8R
@@ -180,7 +180,7 @@ POLL_KB,
             / "$ " prompt
             FIM 0P '$'
             #CALL PRINT_CHAR
-            FIM 0P '\s'
+            FIM 0P ' '
             #CALL PRINT_CHAR
             JUN POLL_KB
     DELETE,
@@ -604,7 +604,7 @@ FIND_NEXT_NON_SPACE,
                 / Put first 4 bits into 0R
                 10R -> 0R
             / Now do the space check
-                FIM 1P '\s'
+                FIM 1P ' '
                 #CALL CMP_8
                 LD 0R
                 / If it's not a space, we're done
@@ -686,7 +686,7 @@ FIND_NEXT_SPACE,
                 / Put first 4 bits into 0R
                 10R -> 0R
             / Now do the space check
-                FIM 1P '\s'
+                FIM 1P ' '
                 #CALL CMP_8
                 LD 0R
                 / If it's a space, we're done
