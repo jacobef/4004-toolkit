@@ -290,7 +290,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     return error.label_redefinition;
                 } else {
                     try label_values.put(label, .{.val = addr, .type = .address });
-                    // std.debug.print("{s} = {}\n", .{label, addr});
+                    std.debug.print("{s} = {}\n", .{label, addr});
                 }
             },
             else => doNothing()

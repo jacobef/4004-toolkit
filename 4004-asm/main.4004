@@ -7,6 +7,8 @@
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
 
+= 2
+
 / Set the stack counter to 0
 FIM 7P 0
 
@@ -151,7 +153,7 @@ POLL_KB,
         #CALL PRINT_CHAR
         FIM 0P ' '
         #CALL PRINT_CHAR
-        / Print the command
+        / Print the command name
             / Load cmd_start into 6R-8R
             FIM 0P CMD_START_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
@@ -162,8 +164,11 @@ POLL_KB,
             0R 1R 2R -> 3R 4R 5R
             / cmd_start back to 0R-2R
             6R 7R 8R -> 0R 1R 2R
-            / Print it
-            #CALL ECHO
+            / Do the print of the command name
+            #CALL PRINT_STR
+            / Print a newline
+            FIM 0P '\n'
+            #CALL PRINT_CHAR
 
         JMS POP_12 / Pop first_space from the stack
         STANDARD_LOOP_BACK,
@@ -475,6 +480,33 @@ POP_4,
 
 / ECHO(first_space: 12, cmd_end: 12) - Print the argument
 ECHO,
+    / If first_space==cmd_end (i.e. if there are no arguments), then return
+    CLC
+    LD 0R
+    SUB 3R
+    #LJCN NZ? ECHO.PRINT_ARG
+    CLC
+    LD 1R
+    SUB 4R
+    #LJCN NZ? ECHO.PRINT_ARG
+    CLC
+    LD 2R
+    SUB 5R
+    #LJCN NZ? ECHO.PRINT_ARG
+    JUN ECHO.WRAP_UP
+
+    ECHO.PRINT_ARG,
+    / Otherwise, call PRINT_STR with first_space+2 (2 nibbles or 1 character ahead) to skip the first space
+    0R 1R 2R += 2
+    #CALL PRINT_STR
+
+    ECHO.WRAP_UP,
+    FIM 0P '\n'
+    #CALL PRINT_CHAR
+    JUN RETURN
+
+/ PRINT_STR(str_start: 12, str_end: 12) - Print the argument
+PRINT_STR,
     / Save 0R in 6R
     0R -> 6R
     / Save 11R-13R to the stack
@@ -488,10 +520,10 @@ ECHO,
     XCH 0R
     JMS PUSH_4
 
-    / Put first_space into 11R-13R. It will later be used as an iterator over the command.
+    / Put str_start into 11R-13R. It will later be used as an iterator over the command.
     6R 1R 2R -> 11R 12R 13R
 
-    / Save cmd_end to the stack
+    / Save str_end to the stack
     3R -> 0R
     JMS PUSH_4
     4R -> 0R
@@ -499,23 +531,14 @@ ECHO,
     5R -> 0R
     JMS PUSH_4
 
-    / If first_space==cmd_end (i.e. if there are no arguments), then return
-    6R -> 0R
-    #CALL CMP_12
-    LD 0R
-    #LJCN NZ? ECHO.WRAP_UP
-
-    / Otherwise, increment our counter so it's at the start of the argument
-    11R 12R 13R += 2
-
     PRINT_LOOP,
-        / Break if we've reached cmd_end
+        / Break if we've reached str_end
             FIM 0P 3
             JMS STACK_TOP_PEEK_12
             11R 12R 13R -> 3R 4R 5R
             #CALL CMP_12
             LD 0R
-            #LJCN NZ? ECHO.WRAP_UP
+            #LJCN NZ? PRINT_STR.WRAP_UP
         / Print the character at the counter
             / Load first nibble into 0R
             LD 11R
@@ -537,12 +560,9 @@ ECHO,
             11R 12R 13R += 1
         JUN PRINT_LOOP
 
-    ECHO.WRAP_UP,
-        / Remove cmd_end from the stack
+    PRINT_STR.WRAP_UP,
+        / Remove str_end from the stack
         JMS POP_12
-        / Display newline
-        FIM 0P '\n'
-        #CALL PRINT_CHAR
         / Restore 11R-13R from the stack
         JMS POP_4
         0R -> 13R

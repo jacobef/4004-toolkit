@@ -208,7 +208,7 @@ pub const instructions = struct {
 
     fn execute_jun(cpu: *Intel4004, addr: u12) void {
         cpu.program_counter = addr;
-        // std.debug.print("[CPU] jumped to {}\n", .{addr});
+        //std.debug.print("[CPU] jumped to {}\n", .{addr});
     }
 
     fn execute_jin(cpu: *Intel4004, pair: u3) void {
