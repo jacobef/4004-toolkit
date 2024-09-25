@@ -18,6 +18,7 @@ FIM 7P 0
 #CALL MALLOC
 0R 1R 2R -> 3R 4R 5R
 / Push it to the stack
+CMD_START_STACK_OFFSET = 0
 3R -> 0R
 JMS PUSH_4 / 0
 4R -> 0R
@@ -25,25 +26,13 @@ JMS PUSH_4 / 1
 5R -> 0R
 JMS PUSH_4 / 2
 / Initialize the command-end pointer to the command start address
+CMD_END_STACK_OFFSET = 3
 3R -> 0R
 JMS PUSH_4 / 3
 4R -> 0R
 JMS PUSH_4 / 4
 5R -> 0R
 JMS PUSH_4 / 5
-
-/ Set monitor_char_ready_cache to false
-0 -> 0R
-JMS PUSH_4 / 6
-/ Set monitor_done_displaying_cache to false
-0 -> 0R
-JMS PUSH_4 / 7
-/ Set kb_char_ready_cache to false
-0 -> 0R
-JMS PUSH_4 / 8
-/ Set kb_done_displaying_cache to false
-0 -> 0R
-JMS PUSH_4 / 9
 
 / Write "$ " to the monitor
 FIM 0P '$'
@@ -73,7 +62,7 @@ POLL_KB,
 
     / The key is not enter
         / Put the command-end pointer across 0R and 1P
-        FIM 0P 3
+        FIM 0P CMD_END_STACK_OFFSET
         JMS STACK_BOTTOM_PEEK_12
         2R -> 3R
         1R -> 2R
@@ -109,11 +98,11 @@ POLL_KB,
     ENTER,
         / Call FIND_NEXT_SPACE
             / Get the command start address and save it to the stack
-            FIM 0P 0
+            FIM 0P CMD_START_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             JMS PUSH_12
             / Get the command end address and save it to 3R-5R
-            FIM 0P 3
+            FIM 0P CMD_END_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 3R 4R 5R
             / Put the command start address in 0R-2R
@@ -123,7 +112,7 @@ POLL_KB,
             JMS PUSH_12
         / Call GET_CMD_CODE
             / Load cmd_start into 6R-8R
-            FIM 0P 0
+            FIM 0P CMD_START_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 6R 7R 8R
             / Load first_space into 3R-5R
@@ -144,7 +133,7 @@ POLL_KB,
             #LJCN Z? NOT_FOUND
         / Call echo
             / Copy the command-end pointer into 3R-5R
-            FIM 0P 3
+            FIM 0P CMD_END_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 3R 4R 5R
             / Pop first_space into 0R-2R
@@ -164,7 +153,7 @@ POLL_KB,
         #CALL PRINT_CHAR
         / Print the command
             / Load cmd_start into 6R-8R
-            FIM 0P 0
+            FIM 0P CMD_START_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 6R 7R 8R
             / Load first_space into 3R-5R
@@ -180,7 +169,7 @@ POLL_KB,
         STANDARD_LOOP_BACK,
             / Reset the command-end pointer to the start of the command
                 / Put the command start address in 2R-4R
-                FIM 0P 0
+                FIM 0P CMD_START_STACK_OFFSET
                 JMS STACK_BOTTOM_PEEK_12
                 2R -> 4R
                 1R -> 3R
@@ -196,11 +185,11 @@ POLL_KB,
             JUN POLL_KB
     DELETE,
         / Push the command start pointer to the stack
-        FIM 0P 0
+        FIM 0P CMD_START_STACK_OFFSET
         JMS STACK_BOTTOM_PEEK_12
         JMS PUSH_12
         / Copy the command-end pointer into 3R-5R
-        FIM 0P 3
+        FIM 0P CMD_END_STACK_OFFSET
         JMS STACK_BOTTOM_PEEK_12
         0R 1R 2R -> 3R 4R 5R
         / Copy the command start pointer into 0R-2R
@@ -214,7 +203,7 @@ POLL_KB,
             FIM 0P '\d'
             #CALL PRINT_CHAR
             / Move the command counter back a character
-            FIM 0P 3
+            FIM 0P CMD_END_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -= 2
             2R -> 4R
@@ -805,12 +794,12 @@ CMP_STRS_UNCHKD,
     CSU.LOOP,
         / Return true if len == 0
         LD 6R
-        #LJCN NZ? SKIP_RETURN
+        #LJCN NZ? KEEP_GOING
         LD 7R
-        #LJCN NZ? SKIP_RETURN
+        #LJCN NZ? KEEP_GOING
         JUN CSU.RETURN_TRUE
         / Decrement len
-        SKIP_RETURN,
+        KEEP_GOING,
         6R 7R -= 1
 
         / Load the DRAM character into 5P
@@ -941,27 +930,30 @@ CMP_12,
 
 / Read from keyboard - READ_CHAR() -> char: 8
 READ_CHAR,
-    / Wait for kb_char_ready to be 1
+    KEYBOARD_CHAR_PORT_1 = 0
+    KEYBOARD_CHAR_PORT_2 = 1
+    KEYBOARD_CHAR_READY_PORT = 2
+    / Wait for the keyboard to signal it's ready
     WAIT_FOR_CHAR,
-        / Read kb_char_ready
-        2 -> 2R
+        / Read the keyboard's char ready port
+        KEYBOARD_CHAR_READY_PORT -> 2R
         SRC 1P
         RDR
         / If it's 0, then keep looping
         #LJCN Z? WAIT_FOR_CHAR
 
     / Get the character sent by the keyboard
-    0 -> 2R
+    KEYBOARD_CHAR_PORT_1 -> 2R
     SRC 1P
     RDR
     XCH 0R
-    1 -> 2R
+    KEYBOARD_CHAR_PORT_2 -> 2R
     SRC 1P
     RDR
     XCH 1R
 
-    / Set kb_char_ready to 0
-    2 -> 2R
+    / Reset the char ready port
+    KEYBOARD_CHAR_READY_PORT -> 2R
     SRC 1P
     LDM 0
     WRR
@@ -971,27 +963,30 @@ READ_CHAR,
 
 / Write Char to monitor - PRINT_CHAR(char: 8)
 PRINT_CHAR,
-    / Wait for monitor_char_ready to reset (i.e. be 0)
+    MONITOR_CHAR_PORT_1 = 3
+    MONITOR_CHAR_PORT_2 = 4
+    MONITOR_CHAR_READY_PORT = 5
+    / Wait for the monitor to signal it's ready
     WAIT_FOR_MONITOR,
-        / Read monitor_char_ready
-        6 -> 2R
+        / Read the monitor's char ready port
+        MONITOR_CHAR_READY_PORT -> 2R
         SRC 1P
         RDR
         / If it's not 0, then keep looping
         #LJCN NZ? WAIT_FOR_MONITOR
 
     / Set the character lines
-    4 -> 2R
+    MONITOR_CHAR_PORT_1 -> 2R
     SRC 1P
     LD 0R
     WRR
-    5 -> 2R
+    MONITOR_CHAR_PORT_2 -> 2R
     SRC 1P
     LD 1R
     WRR
 
-    / Set monitor_char_ready to 1
-    6 -> 2R
+    / Set the char ready port
+    MONITOR_CHAR_READY_PORT -> 2R
     SRC 1P
     LDM 1
     WRR

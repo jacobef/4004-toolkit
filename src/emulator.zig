@@ -90,9 +90,9 @@ pub fn main() !void {
         .char_ready_port = &intel4004.rom.ports[2],
     };
     var monitor = Monitor {
-        .char_port_high = &intel4004.rom.ports[4],
-        .char_port_low = &intel4004.rom.ports[5],
-        .char_ready_port = &intel4004.rom.ports[6],
+        .char_port_high = &intel4004.rom.ports[3],
+        .char_port_low = &intel4004.rom.ports[4],
+        .char_ready_port = &intel4004.rom.ports[5],
     };
     var lock = std.atomic.Value(bool).init(false);
 
