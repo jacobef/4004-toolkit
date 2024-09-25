@@ -292,7 +292,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     return error.label_redefinition;
                 } else {
                     try label_values.put(label, .{.val = addr, .type = .address });
-                    std.debug.print("{s} = {}\n", .{label, addr});
+                    // std.debug.print("{s} = {}\n", .{label, addr});
                 }
             },
             else => doNothing()
@@ -1019,6 +1019,4 @@ pub fn main() !void {
     const output_file_path = cmd_args[2];
     const output_file = try std.fs.cwd().createFile(output_file_path, .{});
     _ = try output_file.write(&assembled_bytes);
-
-    std.debug.print("{any}\n", .{assembled_bytes});
 }
