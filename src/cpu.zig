@@ -58,6 +58,8 @@ pub const Intel4004 = struct {
     const ns_per_cycle: u64 = 1_000_000_000 / clock_speed_hz;
 
     pub fn single_step(self: *Intel4004) !void {
+        const start_time = time.nanoTimestamp();
+
         const byte1 = self.pram.bytes[self.program_counter];
         const inst_spec = instruction_spec.getInstructionSpec(byte1) orelse return error.illegal_instruction_error;
         const n_bytes = inst_spec.opcode_string.len / 8;
@@ -73,6 +75,22 @@ pub const Intel4004 = struct {
             .f_12 => |f| f(self, @intCast(args[0])),
             .f_3_8 => |f| f(self, @intCast(args[0]), @intCast(args[1])),
             .f_4_8 => |f| f(self, @intCast(args[0]), @intCast(args[1])),
+        }
+
+        const end_time = time.nanoTimestamp();
+        const expected_time_ns = ns_per_cycle * n_bytes;
+        const actual_time_ns = end_time - start_time;
+        if (actual_time_ns < expected_time_ns) {
+            const remaining_time_ns = expected_time_ns - actual_time_ns;
+            busy_wait(remaining_time_ns);
+        }
+    }
+
+    fn busy_wait(wait_time_ns: i128) void {
+        const start = time.nanoTimestamp();
+        var now = start;
+        while ((now - start) < wait_time_ns) {
+            now = time.nanoTimestamp();
         }
     }
 };
