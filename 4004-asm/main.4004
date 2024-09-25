@@ -435,8 +435,8 @@ STACK_TOP_PEEK_4,
 / STACK_TOP_PEEK_12(n: 8) -> val: 12 - Peek at the address starting at the top of the stack minus (n-1).
 STACK_TOP_PEEK_12,
     / Subtract the argument from the stack pointer and store it in 2P
-    LD 15R
     CLC
+    LD 15R
     SUB 1R
     XCH 5R
     CMC
@@ -872,13 +872,13 @@ CMP_STRS_UNCHKD,
             3R 4R 5R += 1
 
         / If the first nibbles aren't equal, return false
-        LD 10R
         CLC
+        LD 10R
         SUB 12R
         #LJCN NZ? CSU.RETURN_FALSE
         / If the second nibbles aren't equal, return false
-        LD 11R
         CLC
+        LD 11R
         SUB 13R
         #LJCN NZ? CSU.RETURN_FALSE
         / Loop back
@@ -910,12 +910,12 @@ CMP_STRS_UNCHKD,
 
 / Compare characters (8 bits) - CMP_8(char1: 8, char2: 8) -> same: 4
 CMP_8,
-    LD 0R
     CLC
+    LD 0R
     SUB 2R
     #LJCN NZ? C8.NOT_EQUAL
-    LD 1R
     CLC
+    LD 1R
     SUB 3R
     #LJCN NZ? C8.NOT_EQUAL
     / Equal
@@ -928,16 +928,16 @@ CMP_8,
 
 / Compare 12-bit numbers - CMP_12(num1: 12, num2: 12) -> same: 4
 CMP_12,
-    LD 0R
     CLC
+    LD 0R
     SUB 3R
     #LJCN NZ? C12.NOT_EQUAL
-    LD 1R
     CLC
+    LD 1R
     SUB 4R
     #LJCN NZ? C12.NOT_EQUAL
-    LD 2R
     CLC
+    LD 2R
     SUB 5R
     #LJCN NZ? C12.NOT_EQUAL
     / Equal
@@ -1111,16 +1111,7 @@ RETURN,
     / Restore 0R
     JMS POP_4
     / Decrement the stack pointer by 3 to pop off the address to jump to
-    3 -> 8R
-    LD 15R
-    CLC
-    SUB 8R
-    XCH 15R
-    CMC
-    0 -> 8R
-    LD 14R
-    SUB 8R
-    XCH 14R
+    7P -= 3
 
     / Will be overwritten with a JUN to the return address
     JUN_ADDR, JUN FREEZE
