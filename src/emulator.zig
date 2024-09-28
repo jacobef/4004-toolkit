@@ -9,9 +9,13 @@ const Intel4004 = cpus.Intel4004;
 const instruction_spec = @import("instruction_spec.zig");
 const InstructionSpec = instruction_spec.InstructionSpec;
 
+const disassembler = @import("disassembler.zig");
+
 const devices = @import("devices.zig");
 const Keyboard = devices.Keyboard;
 const Monitor = devices.Monitor;
+
+const debugger = @import("debugger.zig");
 
 const c = @cImport({
     @cInclude("stdio.h");
@@ -35,6 +39,33 @@ fn getch() u8 {
 fn start_cpu(intel4004: *Intel4004) !void {
     while (true) {
         try intel4004.single_step();
+    }
+}
+
+fn start_cpu_with_debugger(intel4004: *Intel4004, allocator: std.mem.Allocator) !void {
+    var server = try debugger.TCP_ADDRESS.listen(.{});
+    defer server.deinit();
+    std.log.info("waiting for debugger to connect...", .{});
+    const stream = (try server.accept()).stream;
+    std.log.info("debugger connected", .{});
+    const from_debugger = stream.reader();
+    const to_debugger = stream.writer();
+    while (true) {
+        var buf: [debugger.MAX_CMD_SIZE]u8 = undefined;
+        const debugger_command = try from_debugger.readUntilDelimiter(&buf, '\n');
+        if (std.mem.eql(u8, debugger_command, "s")) {
+            const instr = try disassembler.disassemble_instruction(intel4004, intel4004.program_counter, allocator);
+            try intel4004.single_step();
+            defer allocator.free(instr);
+            _ = try to_debugger.write(instr);
+            _ = try to_debugger.write("\n");
+        } else if (std.mem.eql(u8, debugger_command, "r")) {
+            while (true) {
+                try intel4004.single_step();
+            }
+        } else {
+            std.log.err("invalid command sent from debugger", .{});
+        }
     }
 }
 
