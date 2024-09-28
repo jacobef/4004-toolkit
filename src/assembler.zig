@@ -105,7 +105,7 @@ fn getSimpleExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType
         return .condition;
     } else if (expr[0] < '0' or expr[0] > '9') {
         return label_types.get(expr) orelse {
-            std.debug.print("no such label: {s}\n", .{expr});
+            std.log.err("no such label: {s}\n", .{expr});
             return error.no_such_label;
         };
     } else if (expr[expr.len-1] == 'R') {
@@ -142,7 +142,7 @@ fn evalSimpleExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expressi
     } else if (expr[0] < '0' or expr[0] > '9') {
         if (labels) |labels_| {
             return labels_.get(expr) orelse {
-                std.debug.print("no such label: {s}\n", .{expr});
+                std.log.err("no such label: {s}\n", .{expr});
                 return error.no_such_label;
             };
         } else {
@@ -223,8 +223,8 @@ fn getArgMask(arg_t: type, args: []const Expression, spec: InstructionSpec, arg_
         const pc_after_instr = pc + 2;
         const jump_to = arg.val;
         if (pc_after_instr & 0xF00 != jump_to & 0xF00) {
-            std.debug.print("{s} {any}\n", .{spec.mnemonic, args});
-            std.debug.print("8-bit jump across a page boundary; instruction is on address {} (will jump to page {}) and is trying to jump to address {} (page {})\n",
+            std.log.err("{s} {any}\n", .{spec.mnemonic, args});
+            std.log.err("8-bit jump across a page boundary; instruction is on address {} (will jump to page {}) and is trying to jump to address {} (page {})\n",
                 .{pc, (pc_after_instr & 0xF00) >> 8, jump_to, (jump_to & 0xF00) >> 8});
             return error.eight_bit_jump_across_page_boundary;
         }
@@ -232,11 +232,7 @@ fn getArgMask(arg_t: type, args: []const Expression, spec: InstructionSpec, arg_
 
     const arg_val: u16 = @as(arg_t, @truncate(arg.val));
     if (arg.type != expected_type) {
-        std.debug.print("error in {s} ", .{spec.mnemonic});
-        for (args) |a| {
-            std.debug.print("{d} ", .{a.val});
-        }
-        std.debug.print(": expected {s}, got {s} for arg {!}\n", .{@tagName(expected_type), @tagName(arg.type), arg_i});
+        std.log.err("expected {s}, got {s} for arg {!}\n", .{@tagName(expected_type), @tagName(arg.type), arg_i});
         return error.type_mismatch;
     }
     return arg_val << spec.arg_extractors[arg_i].shift_amount;
@@ -400,7 +396,7 @@ fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
                 }
             });
         } else {
-            std.debug.print("Error: Placeholders ('_') are not allowed in an add-assign line.\n", .{});
+            std.log.err("Placeholders ('_') are not allowed in an add-assign line.\n", .{});
             return error.dest_register_cannot_be_null;
         }
     }
@@ -452,7 +448,7 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
                     // Append CMC
                     try out.append(.{ .instruction = .{ .mnemonic = "CMC", .args = try allocator.dupe(Expression, &.{}) } });
                 } else {
-                    std.debug.print("Error: Placeholders ('_') are not allowed in a sub-assign line.\n", .{});
+                    std.log.err("Placeholders ('_') are not allowed in a sub-assign line.\n", .{});
                     return error.dest_register_cannot_be_null;
                 }
             },
@@ -483,7 +479,7 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
                     // Append CMC
                     try out.append(.{ .instruction = .{ .mnemonic = "CMC", .args = try allocator.dupe(Expression, &.{}) } });
                 } else {
-                    std.debug.print("Error: Placeholders ('_') are not allowed in a sub-assign line.\n", .{});
+                    std.log.err("Placeholders ('_') are not allowed in a sub-assign line.\n", .{});
                     return error.dest_register_cannot_be_null;
                 }
             }
@@ -507,7 +503,7 @@ fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
         .origin => |new_pc_expr| {
             const new_pc = evalExpr(new_pc_expr.str, pc, null, allocator) catch |err| switch (err) {
                 error.labels_map_not_provided => {
-                    std.debug.print("origin expression can't contain a label\n", .{});
+                    std.log.err("origin expression can't contain a label\n", .{});
                     return error.origin_expression_label;
                 },
                 else => return err
@@ -593,7 +589,7 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
         , .{inverted_cond, args[1]});
         return try parseLines(out, allocator);
     } else {
-        std.debug.print("no such macro: {s}\n", .{name});
+        std.log.err("no such macro: {s}\n", .{name});
         return error.no_such_macro;
     }
 }
@@ -761,7 +757,7 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
         switch (expr_type) {
             .register, .register_pair, .number, .address => try source_exprs.append(.{.str = expr_str, .type = expr_type}),
             else => {
-                std.debug.print("invalid type for source in source/dest expression: {!}\n", .{expr_type});
+                std.log.err("invalid type for source in source/dest expression: {!}\n", .{expr_type});
                 return error.invalid_source_type;
             }
         }
@@ -774,7 +770,7 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
             switch (expr_type) {
                 .register, .register_pair => try dest_exprs.append(.{.str = expr_str, .type = expr_type}),
                 else => {
-                    std.debug.print("invalid type for dest in source/dest expression: {!}\n", .{expr_type});
+                    std.log.err("invalid type for dest in source/dest expression: {!}\n", .{expr_type});
                     return error.invalid_dest_type;
                 }
             }
@@ -790,7 +786,7 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
     } else {
         for (source_exprs.items) |expr| {
             if (expr.type != .register and expr.type != .register_pair) {
-                std.debug.print("the source expression of a source/dest line must be all registers and/or register pairs, or one number or address\n", .{});
+                std.log.err("the source expression of a source/dest line must be all registers and/or register pairs, or one number or address\n", .{});
                 return error.invalid_source;
             }
         }
@@ -911,11 +907,11 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
                 }
             }
             if (evald_source.items.len != evald_dest.items.len) {
-                std.debug.print("source/dest length mismatch\n", .{});
+                std.log.err("source/dest length mismatch\n", .{});
                 return error.source_dest_length_mismatch;
             }
             if (evald_source.items.len == 0 or evald_dest.items.len == 0) {
-                std.debug.print("source or dest has 0 length\n", .{});
+                std.log.err("source or dest has 0 length\n", .{});
                 return error.empty_source_or_dest;
             }
             return .{ .source = .{.regs = try evald_source.toOwnedSlice()}, .dest = try evald_dest.toOwnedSlice()};

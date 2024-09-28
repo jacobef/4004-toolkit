@@ -92,6 +92,7 @@ pub const InstructionSpec = struct {
 };
 
 pub const instructions = struct {
+    // TODO replace the commented-out prints with logging to a separate file
     fn execute_nop(cpu: *Intel4004) void {
         _ = cpu;
     }
