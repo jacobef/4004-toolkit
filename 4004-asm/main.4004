@@ -1013,7 +1013,9 @@ PRINT_CHAR,
 
 
 RETURN,
-    / Save 0R to the stack. We'll use 0R, 8R, and 9R for all operations within RETURN.
+    / Save 0R and 1R to the stack. We'll use 0R, 1R, 8R, and 9R for all operations within RETURN.
+    JMS PUSH_4
+    1R -> 0R
     JMS PUSH_4
 
     / Set write enable
@@ -1036,15 +1038,9 @@ RETURN,
     WPM
     / Write the first nibble of the address to jump to, into program memory
         / Get the first nibble of the address to jump to, from the stack into 0R
-            / Put the stack pointer minus 4 into 4P
-            7P -> 4P
-            4P -= 4
             / Put the first nibble of the address to jump to into 0R
-            LDM 0
-            DCL
-            SRC 4P
-            RDM
-            XCH 0R
+            FIM 0P 5
+            JMS STACK_TOP_PEEK_4
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
@@ -1060,15 +1056,9 @@ RETURN,
 
     / Write the second nibble of the address to jump to, into program memory
         / Get the second nibble of the address to jump to, from the stack into 0R
-            / Put the stack pointer minus 3 into 4P
-            7P -> 4P
-            4P -= 3
             / Put the second nibble of the address to jump to into 0R
-            LDM 0
-            DCL
-            SRC 4P
-            RDM
-            XCH 0R
+            FIM 0P 4
+            JMS STACK_TOP_PEEK_4
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
@@ -1084,15 +1074,9 @@ RETURN,
 
     / Write the third nibble of the address to jump to, into program memory
         / Get the third nibble of the address to jump to, from the stack into 0R
-            / Put the stack pointer minus 2 into 4P
-            7P -> 4P
-            4P -= 2
             / Put the third nibble of the address to jump to into 0R
-            LDM 0
-            DCL
-            SRC 4P
-            RDM
-            XCH 0R
+            FIM 0P 3
+            JMS STACK_TOP_PEEK_4
         / Send high 4 bits of program RAM address
         15 -> 8R
         SRC 4P
@@ -1106,8 +1090,12 @@ RETURN,
         LD 0R
         WPM
 
+    / Restore 1R
+    JMS POP_4
+    0R -> 1R
     / Restore 0R
     JMS POP_4
+
     / Decrement the stack pointer by 3 to pop off the address to jump to
     7P -= 3
 
