@@ -21,6 +21,69 @@ const Expression = struct {
     type: CPUArgType
 };
 
+const TypedExpr = struct {
+    str: []const u8,
+    type: CPUArgType
+};
+
+const ExprToken = union(enum) {
+    subexpr: []const u8,
+    operator: enum { plus, minus, at },
+};
+
+const UnevaldSourceDestLine = struct {
+    source: []const []const u8,
+    dest: []const []const u8
+};
+
+const ParsedLine = union(enum) {
+    instruction: struct { mnemonic: []const u8, args: []const []const u8 },
+    macro: struct { name: []const u8, args: []const []const u8 },
+    arrow: UnevaldSourceDestLine,
+    add_assign: UnevaldSourceDestLine,
+    sub_assign: UnevaldSourceDestLine,
+    expr: []const u8,
+    equate: struct { name: []const u8, expr: []const u8 },
+    origin: []const u8,
+    label: []const u8
+};
+
+const TypedSourceDestLine = struct {
+    source: union(enum) {
+        num: TypedExpr,
+        regs: []TypedExpr,
+    },
+    dest: []?TypedExpr,
+};
+
+const TypedLine = union(enum) {
+    instruction: struct { mnemonic: []const u8, args: []const TypedExpr },
+    arrow: TypedSourceDestLine,
+    add_assign: TypedSourceDestLine,
+    sub_assign: TypedSourceDestLine,
+    expr: TypedExpr,
+    equate: struct { name: []const u8, expr: TypedExpr },
+    origin: TypedExpr,
+    label: []const u8
+};
+
+const EvaldSourceDestLine = struct {
+    source: union(enum) {
+        num: u64,
+        regs: []const u4,
+    },
+    dest: []const ?u4,
+};
+
+const ExprsEvaldLine = union(enum) {
+    instruction: struct { mnemonic: []const u8, args: []const Expression },
+    arrow: EvaldSourceDestLine,
+    add_assign: EvaldSourceDestLine,
+    sub_assign: EvaldSourceDestLine,
+    expr: Expression,
+    origin: u12
+};
+
 fn evalCharExpr(expr: []const u8) !u8 {
     if (expr.len < 3 or expr[0] != '\'' or expr[expr.len-1] != '\'') {
         return error.invalid_char_expr;
@@ -46,11 +109,6 @@ fn evalCharExpr(expr: []const u8) !u8 {
         return inner_char[0];
     }
 }
-
-const ExprToken = union(enum) {
-    subexpr: []const u8,
-    operator: enum { plus, minus, at },
-};
 
 fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
     var tokens = std.ArrayList(ExprToken).init(allocator);
@@ -491,8 +549,6 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
     return try out.toOwnedSlice();
 }
 
-
-
 fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
     switch (line) {
         .instruction => |inst_line| {
@@ -643,57 +699,6 @@ fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 
 
     return try out.toOwnedSlice();
 }
-
-const TypedExpr = struct { str: []const u8, type: CPUArgType };
-
-const UnevaldSourceDestLine = struct { source: []const []const u8, dest: []const []const u8 };
-const TypedSourceDestLine = struct {
-    source: union(enum) {
-        num: TypedExpr,
-        regs: []TypedExpr,
-    },
-    dest: []?TypedExpr,
-};
-
-const EvaldSourceDestLine = struct {
-    source: union(enum) {
-        num: u64,
-        regs: []const u4,
-    },
-    dest: []const ?u4,
-};
-
-const ParsedLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const []const u8 },
-    macro: struct { name: []const u8, args: []const []const u8 },
-    arrow: UnevaldSourceDestLine,
-    add_assign: UnevaldSourceDestLine,
-    sub_assign: UnevaldSourceDestLine,
-    expr: []const u8,
-    equate: struct { name: []const u8, expr: []const u8 },
-    origin: []const u8,
-    label: []const u8
-};
-
-const TypedLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const TypedExpr },
-    arrow: TypedSourceDestLine,
-    add_assign: TypedSourceDestLine,
-    sub_assign: TypedSourceDestLine,
-    expr: TypedExpr,
-    equate: struct { name: []const u8, expr: TypedExpr },
-    origin: TypedExpr,
-    label: []const u8
-};
-
-const ExprsEvaldLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const Expression },
-    arrow: EvaldSourceDestLine,
-    add_assign: EvaldSourceDestLine,
-    sub_assign: EvaldSourceDestLine,
-    expr: Expression,
-    origin: u12
-};
 
 fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
     var out = std.ArrayList(ParsedLine).init(allocator);
@@ -857,7 +862,6 @@ fn evalExprs(exprs: []TypedExpr, allocator: std.mem.Allocator) ![]Expression {
     }
     return try out.toOwnedSlice();
 }
-
 
 fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) !EvaldSourceDestLine {
     var evald_dest = std.ArrayList(?u4).init(allocator);
