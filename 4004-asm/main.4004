@@ -7,8 +7,14 @@
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
 
+= 2
+
 / Set the stack counter to 0
 FIM 7P 0
+
+5 -> 0R
+3 -> 1R
+#CALL MUL_4X4
 
 / Initialize malloc
 #CALL INIT_END_PTR
@@ -96,17 +102,35 @@ POLL_KB,
 
     / The key is enter
     ENTER,
-        / Call FIND_NEXT_SPACE
-            / Get the command start address and save it to the stack
+        / Call GET_ARGC_ARGV (test to see if it clobbers anything)
+            / Get the command start address and save it to 6R-8R
             FIM 0P CMD_START_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
-            JMS PUSH_12
+            0R 1R 2R -> 6R 7R 8R
             / Get the command end address and save it to 3R-5R
             FIM 0P CMD_END_STACK_OFFSET
             JMS STACK_BOTTOM_PEEK_12
             0R 1R 2R -> 3R 4R 5R
             / Put the command start address in 0R-2R
-            JMS POP_12
+            6R 7R 8R -> 0R 1R 2R
+            / Do the call
+            #CALL GET_ARGC_ARGV
+            / Print argc
+            0R -> 1R
+            0 -> 0R
+            0P += '0'
+            #CALL PRINT_CHAR
+        / Call FIND_NEXT_SPACE
+            / Get the command start address and save it to 6R-8R
+            FIM 0P CMD_START_STACK_OFFSET
+            JMS STACK_BOTTOM_PEEK_12
+            0R 1R 2R -> 6R 7R 8R
+            / Get the command end address and save it to 3R-5R
+            FIM 0P CMD_END_STACK_OFFSET
+            JMS STACK_BOTTOM_PEEK_12
+            0R 1R 2R -> 3R 4R 5R
+            / Put the command start address in 0R-2R
+            6R 7R 8R -> 0R 1R 2R
             / Do the call and push the result (first_space) to the stack
             #CALL FIND_NEXT_SPACE
             JMS PUSH_12
@@ -385,6 +409,7 @@ STACK_BOTTOM_PEEK_4, LDM 0
     BBL 0
 
 / STACK_BOTTOM_PEEK_12(n: 8) -> val: 12 - Peek at the address starting at the bottom of the stack plus n.
+/ Does not clobber 3P or 4P.
 STACK_BOTTOM_PEEK_12, LDM 0
     DCL
     / Address to 2P
@@ -431,6 +456,7 @@ STACK_TOP_PEEK_4,
     BBL 0
 
 / STACK_TOP_PEEK_12(n: 8) -> val: 12 - Peek at the address starting at the top of the stack minus (n-1).
+/ Does not clobber 3P or 4P.
 STACK_TOP_PEEK_12,
     / Subtract the argument from the stack pointer and store it in 2P
     CLC
@@ -503,19 +529,252 @@ ECHO,
     #CALL PRINT_CHAR
     JUN RETURN
 
+/ GET_ARGC_ARGV(cmd_start: 12, cmd_end: 12) -> argc: 4, argv: 12 - Get argc and argv
+GET_ARGC_ARGV,
+    / TODO make it possible for this function to not memory leak (i.e. make freeing argv possible)
+    / TODO figure out why this doesn't always malloc overflow when called repeatedly (it sometimes stack overflows or underflows, sometimes prints garbage, etc)
+    / Save 0R in 6R
+    0R -> 6R
+    / Save 10R-13R to the stack
+    10R -> 0R
+    JMS PUSH_4
+    11R -> 0R
+    JMS PUSH_4
+    12R -> 0R
+    JMS PUSH_4
+    13R -> 0R
+    JMS PUSH_4
+
+    / Initialize argc to 0
+    0 -> 10R
+    / Put cmd_start into 11R-13R. It will later be used as an iterator over the command.
+    6R 1R 2R -> 11R 12R 13R
+    / Save cmd_start to the stack
+    11R 12R 13R -> 0R 1R 2R
+    JMS PUSH_12
+    / Save cmd_end to the stack
+    3R 4R 5R -> 0R 1R 2R
+    JMS PUSH_12
+
+    ARGC_LOOP,
+        / Scan until next non-space
+            / Put cmd_end into 3R-5R
+            FIM 0P 3
+            JMS STACK_TOP_PEEK_12
+            0R 1R 2R -> 3R 4R 5R
+            / Put the iterator into 0R-2R
+            11R 12R 13R -> 0R 1R 2R
+            #CALL FIND_NEXT_NON_SPACE
+            / Save next_non_space to the iterator
+            0R 1R 2R -> 11R 12R 13R
+        / If we're at the end, break
+            / Put cmd_end into 0R-2R
+            FIM 0P 3
+            JMS STACK_TOP_PEEK_12
+            / Put the iterator (next_non_space) into 3R-5R
+            11R 12R 13R -> 3R 4R 5R
+            / Check if the non-space location is equal to cmd_end
+            #CALL CMP_12
+            LD 0R
+            / If it is, break
+            #LJCN NZ? ARGC_LOOP_END
+        / Increment argc
+        10R += 1
+        / Scan until next space
+            / Put cmd_end into 3R-5R
+            FIM 0P 3
+            JMS STACK_TOP_PEEK_12
+            0R 1R 2R -> 3R 4R 5R
+            / Put the iterator into 0R-2R
+            11R 12R 13R -> 0R 1R 2R
+            #CALL FIND_NEXT_SPACE
+            / Save next_space to the iterator
+            0R 1R 2R -> 11R 12R 13R
+        / If we're at the end, break
+            / Put cmd_end into 0R-2R
+            FIM 0P 3
+            JMS STACK_TOP_PEEK_12
+            / Put the iterator (next_space) into 3R-5R
+            11R 12R 13R -> 3R 4R 5R
+            / Check if the space location is equal to cmd_end
+            #CALL CMP_12
+            LD 0R
+            / If it is, break
+            #LJCN NZ? ARGC_LOOP_END
+        / Loop back
+        JUN ARGC_LOOP
+    ARGC_LOOP_END,
+
+    / Allocate memory for argv
+        / Put argc*6 across 1R and 2R
+        10R -> 2R
+        0 -> 1R
+        1R 2R -> 3R 4R
+        1R 2R += 3R 4R / 1R 2R = argc*2
+        1R 2R += 3R 4R / 1R 2R = argc*3
+        1R 2R += 1R 2R / 1R 2R = argc*6
+        / Malloc that much
+        0 -> 0R
+        #CALL MALLOC
+        JMS PUSH_12
+    / Save argc to the stack
+    10R -> 0R
+    JMS PUSH_4
+    / Set the current arg number to 0
+    0 -> 10R
+
+    / Set the command iterator to cmd_start
+    FIM 0P 10
+    JMS STACK_TOP_PEEK_12
+    0R 1R 2R -> 11R 12R 13R
+
+    ARGV_LOOP,
+        / Break if the current arg number is argc
+            / Put argc in 0R
+            FIM 0P 1
+            JMS STACK_TOP_PEEK_4
+            / Break if their difference is 0
+            0R -= 10R
+            LD 0R
+            #LJCN Z? ARGV_LOOP_END
+        / Scan until next non-space
+            / Put cmd_end into 3R-5R
+            FIM 0P 7
+            JMS STACK_TOP_PEEK_12
+            0R 1R 2R -> 3R 4R 5R
+            / Put the command iterator into 0R-2R
+            11R 12R 13R -> 0R 1R 2R
+            / Do the call
+            #CALL FIND_NEXT_NON_SPACE
+            / Save the result to the command iterator
+            0R 1R 2R -> 11R 12R 13R
+        / Write the command iterator (which is now arg_start) to argv
+            / Calculate the place in argv
+                / Put the current arg number times 6 in 3P
+                10R -> 7R
+                0 -> 6R
+                0 -> 9R
+                3P += 9R 10R
+                3P += 9R 10R
+                3P += 3P
+                / Put argv in 0R-2R
+                FIM 0P 4
+                JMS STACK_TOP_PEEK_12
+                / Add them
+                0 -> 5R
+                5R 6R 7R += 0R 1R 2R
+            / Do the write
+                / First nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 11R
+                WRM
+                5R 6R 7R += 1
+                / Second nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 12R
+                WRM
+                5R 6R 7R += 1
+                / Third nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 13R
+                WRM
+        / Scan until next space
+            / Put cmd_end into 3R-5R
+            FIM 0P 7
+            JMS STACK_TOP_PEEK_12
+            0R 1R 2R -> 3R 4R 5R
+            / Put the command iterator into 0R-2R
+            11R 12R 13R -> 0R 1R 2R
+            / Do the call
+            #CALL FIND_NEXT_SPACE
+            / Save the result to the command iterator
+            0R 1R 2R -> 11R 12R 13R
+        / Write the command iterator (which is now arg_end) to argv
+            / Calculate the place in argv
+                / Put the current arg number times 6 in 3P
+                10R -> 7R
+                0 -> 6R
+                0 -> 9R
+                3P += 9R 10R
+                3P += 9R 10R
+                3P += 3P
+                / Put argv in 0R-2R
+                FIM 0P 4
+                JMS STACK_TOP_PEEK_12
+                / Add them
+                0 -> 5R
+                5R 6R 7R += 0R 1R 2R
+                / Add 3
+                5R 6R 7R += 3
+            / Do the write
+                / First nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 11R
+                WRM
+                5R 6R 7R += 1
+                / Second nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 12R
+                WRM
+                5R 6R 7R += 1
+                / Third nibble
+                LD 5R
+                DCL
+                SRC 3P
+                LD 13R
+                WRM
+        / Increment the current arg number
+        10R += 1
+        / Loop back
+        JUN ARGV_LOOP
+
+
+    ARGV_LOOP_END,
+    / Remove argc from the stack and save it in 3R
+    JMS POP_4
+    0R -> 3R
+    / Remove argv from the stack and save it in 4R-6R
+    JMS POP_12
+    0R 1R 2R -> 4R 5R 6R
+    / Remove cmd_end from the stack
+    JMS POP_12
+    / Remove cmd_start from the stack
+    JMS POP_12
+    / Restore 10R-13R from the stack
+    JMS POP_4
+    0R -> 13R
+    JMS POP_4
+    0R -> 12R
+    JMS POP_4
+    0R -> 11R
+    JMS POP_4
+    0R -> 10R
+    / Return argc and argv
+    3R -> 0R
+    4R 5R 6R -> 1R 2R 3R
+    JUN RETURN
+
+
 / PRINT_STR(str_start: 12, str_end: 12) - Print the argument
 PRINT_STR,
     / Save 0R in 6R
     0R -> 6R
     / Save 11R-13R to the stack
-    LD 11R
-    XCH 0R
+    11R -> 0R
     JMS PUSH_4
-    LD 12R
-    XCH 0R
+    12R -> 0R
     JMS PUSH_4
-    LD 13R
-    XCH 0R
+    13R -> 0R
     JMS PUSH_4
 
     / Put str_start into 11R-13R. It will later be used as an iterator over the command.
@@ -640,13 +899,13 @@ FIND_NEXT_NON_SPACE,
         11R 12R 13R -> 3R 4R 5R
         / Restore 11R-13R from the stack
         JMS POP_4
-        XCH 13R
+        0R -> 13R
         JMS POP_4
-        XCH 12R
+        0R -> 12R
         JMS POP_4
-        XCH 11R
+        0R -> 11R
         JMS POP_4
-        XCH 10R
+        0R -> 10R
         / Put the counter into 0R-2R and return it
         3R 4R 5R -> 0R 1R 2R
         JUN RETURN
@@ -722,13 +981,13 @@ FIND_NEXT_SPACE,
         11R 12R 13R -> 3R 4R 5R
         / Restore 11R-13R from the stack
         JMS POP_4
-        XCH 13R
+        0R -> 13R
         JMS POP_4
-        XCH 12R
+        0R -> 12R
         JMS POP_4
-        XCH 11R
+        0R -> 11R
         JMS POP_4
-        XCH 10R
+        0R -> 10R
         / Put the counter into 0R-2R and return it
         3R 4R 5R -> 0R 1R 2R
         JUN RETURN
@@ -939,11 +1198,11 @@ CMP_12,
     SUB 5R
     #LJCN NZ? C12.NOT_EQUAL
     / Equal
-        LDM 1
-        XCH 0R
+        1 -> 0R
         JUN RETURN
-    C12.NOT_EQUAL, LDM 0
-        XCH 0R
+    / Not equal
+    C12.NOT_EQUAL,
+        0 -> 0R
         JUN RETURN
 
 / Read from keyboard - READ_CHAR() -> char: 8

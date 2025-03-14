@@ -16,37 +16,18 @@ fn instructionFromMnemonic(mnemonic: []const u8) ?InstructionSpec {
     return null;
 }
 
-const Expression = struct {
-    val: u64,
-    type: CPUArgType
-};
+const Expression = struct { val: u64, type: CPUArgType };
 
-const TypedExpr = struct {
-    str: []const u8,
-    type: CPUArgType
-};
+const TypedExpr = struct { str: []const u8, type: CPUArgType };
 
 const ExprToken = union(enum) {
     subexpr: []const u8,
     operator: enum { plus, minus, at },
 };
 
-const UnevaldSourceDestLine = struct {
-    source: []const []const u8,
-    dest: []const []const u8
-};
+const UnevaldSourceDestLine = struct { source: []const []const u8, dest: []const []const u8 };
 
-const ParsedLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const []const u8 },
-    macro: struct { name: []const u8, args: []const []const u8 },
-    arrow: UnevaldSourceDestLine,
-    add_assign: UnevaldSourceDestLine,
-    sub_assign: UnevaldSourceDestLine,
-    expr: []const u8,
-    equate: struct { name: []const u8, expr: []const u8 },
-    origin: []const u8,
-    label: []const u8
-};
+const ParsedLine = union(enum) { instruction: struct { mnemonic: []const u8, args: []const []const u8 }, macro: struct { name: []const u8, args: []const []const u8 }, arrow: UnevaldSourceDestLine, add_assign: UnevaldSourceDestLine, sub_assign: UnevaldSourceDestLine, expr: []const u8, equate: struct { name: []const u8, expr: []const u8 }, origin: []const u8, label: []const u8 };
 
 const TypedSourceDestLine = struct {
     source: union(enum) {
@@ -56,16 +37,7 @@ const TypedSourceDestLine = struct {
     dest: []?TypedExpr,
 };
 
-const TypedLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const TypedExpr },
-    arrow: TypedSourceDestLine,
-    add_assign: TypedSourceDestLine,
-    sub_assign: TypedSourceDestLine,
-    expr: TypedExpr,
-    equate: struct { name: []const u8, expr: TypedExpr },
-    origin: TypedExpr,
-    label: []const u8
-};
+const TypedLine = union(enum) { instruction: struct { mnemonic: []const u8, args: []const TypedExpr }, arrow: TypedSourceDestLine, add_assign: TypedSourceDestLine, sub_assign: TypedSourceDestLine, expr: TypedExpr, equate: struct { name: []const u8, expr: TypedExpr }, origin: TypedExpr, label: []const u8 };
 
 const EvaldSourceDestLine = struct {
     source: union(enum) {
@@ -75,20 +47,13 @@ const EvaldSourceDestLine = struct {
     dest: []const ?u4,
 };
 
-const ExprsEvaldLine = union(enum) {
-    instruction: struct { mnemonic: []const u8, args: []const Expression },
-    arrow: EvaldSourceDestLine,
-    add_assign: EvaldSourceDestLine,
-    sub_assign: EvaldSourceDestLine,
-    expr: Expression,
-    origin: u12
-};
+const ExprsEvaldLine = union(enum) { instruction: struct { mnemonic: []const u8, args: []const Expression }, arrow: EvaldSourceDestLine, add_assign: EvaldSourceDestLine, sub_assign: EvaldSourceDestLine, expr: Expression, origin: u12 };
 
 fn evalCharExpr(expr: []const u8) !u8 {
-    if (expr.len < 3 or expr[0] != '\'' or expr[expr.len-1] != '\'') {
+    if (expr.len < 3 or expr[0] != '\'' or expr[expr.len - 1] != '\'') {
         return error.invalid_char_expr;
     }
-    const inner_char = expr[1..expr.len-1];
+    const inner_char = expr[1 .. expr.len - 1];
     if (std.mem.eql(u8, inner_char, "\\a")) {
         return std.ascii.control_code.bel;
     } else if (std.mem.eql(u8, inner_char, "\\d")) {
@@ -144,7 +109,7 @@ fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
                     if (i >= expr.len) return error.unterminated_char_literal;
                     i += 1; // Include the closing quote
                 } else {
-                    while (i < expr.len and !std.mem.containsAtLeast(u8, "+-@", 1, expr[i..i+1])) : (i += 1) {}
+                    while (i < expr.len and !std.mem.containsAtLeast(u8, "+-@", 1, expr[i .. i + 1])) : (i += 1) {}
                 }
                 try tokens.append(.{ .subexpr = expr[start..i] });
             },
@@ -159,18 +124,18 @@ fn getSimpleExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType
         return .address;
     } else if (expr[0] == '\'') {
         return .number;
-    } else if (expr[expr.len-1] == '?') {
+    } else if (expr[expr.len - 1] == '?') {
         return .condition;
     } else if (expr[0] < '0' or expr[0] > '9') {
         return label_types.get(expr) orelse {
             std.log.err("no such label: {s}\n", .{expr});
             return error.no_such_label;
         };
-    } else if (expr[expr.len-1] == 'R') {
+    } else if (expr[expr.len - 1] == 'R') {
         return .register;
-    } else if (expr[expr.len-1] == 'P') {
+    } else if (expr[expr.len - 1] == 'P') {
         return .register_pair;
-    } else if (expr[expr.len-1] == 'B') {
+    } else if (expr[expr.len - 1] == 'B') {
         return .number;
     } else {
         return .number;
@@ -179,11 +144,11 @@ fn getSimpleExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType
 
 fn evalSimpleExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expression)) !Expression {
     if (std.mem.eql(u8, expr, "*")) {
-        return .{.val = pc, .type = .address};
+        return .{ .val = pc, .type = .address };
     } else if (expr[0] == '\'') {
-        return .{.val = try evalCharExpr(expr), .type = .number};
-    } else if (expr[expr.len-1] == '?') {
-        const cond = expr[0..expr.len-1];
+        return .{ .val = try evalCharExpr(expr), .type = .number };
+    } else if (expr[expr.len - 1] == '?') {
+        const cond = expr[0 .. expr.len - 1];
         var val: u4 = undefined;
         if (std.mem.eql(u8, cond, "Z")) {
             val = 0b0100;
@@ -196,7 +161,7 @@ fn evalSimpleExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expressi
         } else {
             return error.invalid_condition;
         }
-        return .{.val = val, .type = .condition};
+        return .{ .val = val, .type = .condition };
     } else if (expr[0] < '0' or expr[0] > '9') {
         if (labels) |labels_| {
             return labels_.get(expr) orelse {
@@ -206,21 +171,21 @@ fn evalSimpleExpr(expr: []const u8, pc: u12, labels: ?std.StringHashMap(Expressi
         } else {
             return error.labels_map_not_provided;
         }
-    } else if (expr[expr.len-1] == 'R') {
-        return .{.val = try std.fmt.parseInt(u4, expr[0..expr.len-1], 10), .type = .register};
-    } else if (expr[expr.len-1] == 'P') {
-        return .{.val = try std.fmt.parseInt(u3, expr[0..expr.len-1], 10), .type = .register_pair};
-    } else if (expr[expr.len-1] == 'B') {
-        return .{.val = try std.fmt.parseInt(u64, expr[0..expr.len-1], 2), .type = .number};
+    } else if (expr[expr.len - 1] == 'R') {
+        return .{ .val = try std.fmt.parseInt(u4, expr[0 .. expr.len - 1], 10), .type = .register };
+    } else if (expr[expr.len - 1] == 'P') {
+        return .{ .val = try std.fmt.parseInt(u3, expr[0 .. expr.len - 1], 10), .type = .register_pair };
+    } else if (expr[expr.len - 1] == 'B') {
+        return .{ .val = try std.fmt.parseInt(u64, expr[0 .. expr.len - 1], 2), .type = .number };
     } else {
-        return .{.val = try std.fmt.parseInt(u64, expr, 10), .type = .number};
+        return .{ .val = try std.fmt.parseInt(u64, expr, 10), .type = .number };
     }
 }
 
 fn getExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !CPUArgType {
     const tokens = try tokenizeExpr(expr, allocator);
     switch (tokens.len) {
-        1 => return getSimpleExprType(expr,  label_types),
+        1 => return getSimpleExprType(expr, label_types),
         3 => switch (tokens[1].operator) {
             .plus => {
                 const term1_type = try getExprType(tokens[0].subexpr, label_types, allocator);
@@ -232,11 +197,11 @@ fn getExprType(expr: []const u8, label_types: std.StringHashMap(CPUArgType), all
             },
             .at => {
                 return .number;
-            }
+            },
         },
         else => {
             return error.wrong_number_of_sub_expressions;
-        }
+        },
     }
 }
 
@@ -248,12 +213,12 @@ fn evalExpr(expr: []const u8, pc: u12, label_values: ?std.StringHashMap(Expressi
             .plus => {
                 const term1 = try evalExpr(tokens[0].subexpr, pc, label_values, allocator);
                 const term2 = try evalExpr(tokens[2].subexpr, pc, label_values, allocator);
-                return .{.val = term1.val+term2.val, .type = term1.type};
+                return .{ .val = term1.val + term2.val, .type = term1.type };
             },
             .minus => {
                 const term1 = try evalExpr(tokens[0].subexpr, pc, label_values, allocator);
                 const term2 = try evalExpr(tokens[2].subexpr, pc, label_values, allocator);
-                return .{.val = term1.val-term2.val, .type = term1.type};
+                return .{ .val = term1.val - term2.val, .type = term1.type };
             },
             .at => {
                 const num = try evalExpr(tokens[0].subexpr, pc, label_values, allocator);
@@ -262,12 +227,12 @@ fn evalExpr(expr: []const u8, pc: u12, label_values: ?std.StringHashMap(Expressi
                 }
                 const nibble_n = try std.fmt.parseInt(u3, tokens[2].subexpr, 10);
                 const shift_amount = @as(u5, nibble_n) * 4;
-                return .{.val = (num.val >> shift_amount) & @as(u64, 0xF), .type = .number};
-            }
+                return .{ .val = (num.val >> shift_amount) & @as(u64, 0xF), .type = .number };
+            },
         },
         else => {
             return error.wrong_number_of_sub_expressions;
-        }
+        },
     }
 }
 
@@ -281,16 +246,15 @@ fn getArgMask(arg_t: type, args: []const Expression, spec: InstructionSpec, arg_
         const pc_after_instr = pc + 2;
         const jump_to = arg.val;
         if (pc_after_instr & 0xF00 != jump_to & 0xF00) {
-            std.log.err("{s} {any}\n", .{spec.mnemonic, args});
-            std.log.err("8-bit jump across a page boundary; instruction is on address {} (will jump to page {}) and is trying to jump to address {} (page {})\n",
-                .{pc, (pc_after_instr & 0xF00) >> 8, jump_to, (jump_to & 0xF00) >> 8});
+            std.log.err("{s} {any}\n", .{ spec.mnemonic, args });
+            std.log.err("8-bit jump across a page boundary; instruction is on address {} (will jump to page {}) and is trying to jump to address {} (page {})\n", .{ pc, (pc_after_instr & 0xF00) >> 8, jump_to, (jump_to & 0xF00) >> 8 });
             return error.eight_bit_jump_across_page_boundary;
         }
     }
 
     const arg_val: u16 = @as(arg_t, @truncate(arg.val));
     if (arg.type != expected_type) {
-        std.log.err("expected {s}, got {s} for arg {!}\n", .{@tagName(expected_type), @tagName(arg.type), arg_i});
+        std.log.err("expected {s}, got {s} for arg {!}\n", .{ @tagName(expected_type), @tagName(arg.type), arg_i });
         return error.type_mismatch;
     }
     return arg_val << spec.arg_extractors[arg_i].shift_amount;
@@ -318,7 +282,7 @@ fn getLabelTypes(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringH
     for (lines) |line| {
         switch (line) {
             .label => |label| try labels_to_types.put(label, .address),
-            else => doNothing()
+            else => doNothing(),
         }
     }
 
@@ -327,7 +291,7 @@ fn getLabelTypes(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringH
             .equate => |eq_line| {
                 try labels_to_types.put(eq_line.name, try getExprType(eq_line.expr, labels_to_types, allocator));
             },
-            else => doNothing()
+            else => doNothing(),
         }
     }
 
@@ -343,11 +307,11 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                 if (label_values.contains(label)) {
                     return error.label_redefinition;
                 } else {
-                    try label_values.put(label, .{.val = addr, .type = .address });
-                    std.debug.print("{s} = {}\n", .{label, addr});
+                    try label_values.put(label, .{ .val = addr, .type = .address });
+                    std.debug.print("{s} = {}\n", .{ label, addr });
                 }
             },
-            else => doNothing()
+            else => doNothing(),
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
@@ -361,7 +325,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     try label_values.put(eq_line.name, try evalExpr(eq_line.expr.str, addr, label_values, allocator));
                 }
             },
-            else => doNothing()
+            else => doNothing(),
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
@@ -375,7 +339,7 @@ fn numRegsInDest(line: TypedSourceDestLine) !u8 {
             switch (expr_.type) {
                 .register => out += 1,
                 .register_pair => out += 2,
-                else => return error.not_reg_or_reg_pair
+                else => return error.not_reg_or_reg_pair,
             }
         }
     }
@@ -392,21 +356,13 @@ fn getArrowLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocat
                 .num => |source_num| {
                     const bit_offset: u6 = @intCast((line.dest.len - 1 - i) * 4); // TODO make less perilous (extract into function probably)
                     const nibble = (source_num >> bit_offset) & @as(u64, 0xF);
-                    try out.append(.{.instruction = .{
-                        .mnemonic = "LDM",
-                        .args = try allocator.dupe(Expression, &.{.{.type = .number, .val = nibble}})
-                    }});
+                    try out.append(.{ .instruction = .{ .mnemonic = "LDM", .args = try allocator.dupe(Expression, &.{.{ .type = .number, .val = nibble }}) } });
                 },
                 .regs => |source_regs| {
-                    try out.append(.{.instruction =.{
-                        .mnemonic = "LD",
-                        .args = try allocator.dupe(Expression, &.{.{.type = .register, .val = source_regs[i]}})}});
-                }
+                    try out.append(.{ .instruction = .{ .mnemonic = "LD", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = source_regs[i] }}) } });
+                },
             }
-            try out.append(.{.instruction = .{
-                .mnemonic = "XCH",
-                .args = try allocator.dupe(Expression, &.{.{.type = .register, .val = dest_reg}})
-            }});
+            try out.append(.{ .instruction = .{ .mnemonic = "XCH", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
         }
     }
 
@@ -421,38 +377,18 @@ fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
         const i = line.dest.len - idx - 1;
         switch (line.source) {
             .num => |increment_value| {
-                const shift: u6 = @intCast(idx*4);
+                const shift: u6 = @intCast(idx * 4);
                 const nibble = (increment_value >> shift) & 0xF;
 
-                try out.append(.{
-                    .instruction = .{
-                        .mnemonic = "LDM",
-                        .args = try allocator.dupe(Expression, &.{.{.val = nibble, .type = .number }})
-                    }
-                });
+                try out.append(.{ .instruction = .{ .mnemonic = "LDM", .args = try allocator.dupe(Expression, &.{.{ .val = nibble, .type = .number }}) } });
             },
             .regs => |increment_by_regs| {
-                try out.append(.{
-                    .instruction = .{
-                        .mnemonic = "LD",
-                        .args = try allocator.dupe(Expression, &.{ .{ .val = increment_by_regs[i], .type = .register } })
-                    }
-                });
-            }
+                try out.append(.{ .instruction = .{ .mnemonic = "LD", .args = try allocator.dupe(Expression, &.{.{ .val = increment_by_regs[i], .type = .register }}) } });
+            },
         }
         if (line.dest[i]) |dest_reg| {
-            try out.append(.{
-                .instruction = .{
-                    .mnemonic = "ADD",
-                    .args = try allocator.dupe(Expression, &.{ .{ .val = dest_reg, .type = .register } })
-                }
-            });
-            try out.append(.{
-                .instruction = .{
-                    .mnemonic = "XCH",
-                    .args = try allocator.dupe(Expression, &.{ .{ .val = dest_reg, .type = .register } })
-                }
-            });
+            try out.append(.{ .instruction = .{ .mnemonic = "ADD", .args = try allocator.dupe(Expression, &.{.{ .val = dest_reg, .type = .register }}) } });
+            try out.append(.{ .instruction = .{ .mnemonic = "XCH", .args = try allocator.dupe(Expression, &.{.{ .val = dest_reg, .type = .register }}) } });
         } else {
             std.log.err("Placeholders ('_') are not allowed in an add-assign line.\n", .{});
             return error.dest_register_cannot_be_null;
@@ -471,38 +407,18 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
         const i = line.dest.len - idx - 1;
         switch (line.source) {
             .num => |decrement_value| {
-                const shift: u6 = @intCast(idx*4);
+                const shift: u6 = @intCast(idx * 4);
                 const nibble = (decrement_value >> shift) & 0xF;
 
                 if (line.dest[i]) |dest_reg| {
                     // Append LDM nibble
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "LDM",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .number, .val = nibble } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "LDM", .args = try allocator.dupe(Expression, &.{.{ .type = .number, .val = nibble }}) } });
                     // Append XCH dest_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "XCH",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = dest_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "XCH", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
                     // Append SUB dest_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "SUB",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = dest_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "SUB", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
                     // Append XCH dest_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "XCH",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = dest_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "XCH", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
                     // Append CMC
                     try out.append(.{ .instruction = .{ .mnemonic = "CMC", .args = try allocator.dupe(Expression, &.{}) } });
                 } else {
@@ -514,33 +430,18 @@ fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
                 if (line.dest[i]) |dest_reg| {
                     const source_reg = decrease_by_regs[i];
                     // Append LD dest_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "LD",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = dest_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "LD", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
                     // Append SUB source_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "SUB",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = source_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "SUB", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = source_reg }}) } });
                     // Append XCH dest_reg
-                    try out.append(.{
-                        .instruction = .{
-                            .mnemonic = "XCH",
-                            .args = try allocator.dupe(Expression, &.{ .{ .type = .register, .val = dest_reg } })
-                        }
-                    });
+                    try out.append(.{ .instruction = .{ .mnemonic = "XCH", .args = try allocator.dupe(Expression, &.{.{ .type = .register, .val = dest_reg }}) } });
                     // Append CMC
                     try out.append(.{ .instruction = .{ .mnemonic = "CMC", .args = try allocator.dupe(Expression, &.{}) } });
                 } else {
                     std.log.err("Placeholders ('_') are not allowed in a sub-assign line.\n", .{});
                     return error.dest_register_cannot_be_null;
                 }
-            }
+            },
         }
     }
 
@@ -562,7 +463,7 @@ fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
                     std.log.err("origin expression can't contain a label\n", .{});
                     return error.origin_expression_label;
                 },
-                else => return err
+                else => return err,
             };
             if (new_pc.val > std.math.maxInt(u12)) {
                 return error.origin_number_too_big;
@@ -575,18 +476,18 @@ fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
         },
         .add_assign => |sd_line| {
             // CLC at the start, then LDM/LD, ADD, XCH for each register
-            return pc + (try numRegsInDest(sd_line))*3 + 1;
+            return pc + (try numRegsInDest(sd_line)) * 3 + 1;
         },
         .sub_assign => |sd_line| {
             return switch (sd_line.source) {
                 //  CLC at the start, then LDM, XCH, SUB, XCH, CMC for each register, except no CMC at the end
-                .num => pc + (try numRegsInDest(sd_line))*5 + 1 - 1,
+                .num => pc + (try numRegsInDest(sd_line)) * 5 + 1 - 1,
                 // CLC at the start, then LD, SUB, XCH, CMC for each register, except no CMC at the end
-                .regs => pc + (try numRegsInDest(sd_line))*4 + 1 - 1,
+                .regs => pc + (try numRegsInDest(sd_line)) * 4 + 1 - 1,
             };
         },
         .equate => return pc,
-        .label => return pc
+        .label => return pc,
     }
 }
 
@@ -604,7 +505,7 @@ fn replaceSourceDestLines(lines: []ExprsEvaldLine, allocator: std.mem.Allocator)
             .sub_assign => |sub_assign_line| {
                 try out.appendSlice(try getSubAssignLineReplacement(sub_assign_line, allocator));
             },
-            else => try out.append(line)
+            else => try out.append(line),
         }
     }
     return try out.toOwnedSlice();
@@ -621,8 +522,7 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
             \\*+6 -> _ _ 8R
             \\JMS PUSH_4_FROM_8R
             \\JUN {s}
-            , .{args[0]}
-        );
+        , .{args[0]});
         return try parseLines(out, allocator);
     } else if (std.mem.eql(u8, name, "LJCN")) {
         // TODO make less horrible
@@ -642,7 +542,7 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
         const out = try std.fmt.allocPrint(allocator,
             \\JCN {s} *+4
             \\JUN {s}
-        , .{inverted_cond, args[1]});
+        , .{ inverted_cond, args[1] });
         return try parseLines(out, allocator);
     } else {
         std.log.err("no such macro: {s}\n", .{name});
@@ -658,7 +558,7 @@ fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLin
                 const replacement_lines = try getMacroReplacement(macro_line.name, macro_line.args, allocator);
                 try out.appendSlice(try replaceMacros(replacement_lines, allocator));
             },
-            else => try out.append(line)
+            else => try out.append(line),
         }
     }
     return try out.toOwnedSlice();
@@ -705,22 +605,22 @@ fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
 
     const words = try getWords(line, allocator);
 
-    const label = if (words.len > 0 and words[0][words[0].len - 1] == ',') words[0][0..words[0].len-1] else null;
+    const label = if (words.len > 0 and words[0][words[0].len - 1] == ',') words[0][0 .. words[0].len - 1] else null;
     const words_without_label = if (label) |_| words[1..] else words;
-    if (label) |label_| try out.append(.{.label = label_});
+    if (label) |label_| try out.append(.{ .label = label_ });
     if (words_without_label.len == 0) {
         return try out.toOwnedSlice();
     }
 
     for (words_without_label, 0..) |word, i| {
         if (std.mem.eql(u8, word, "->")) {
-            try out.append(.{.arrow = .{ .source = words_without_label[0..i], .dest = words_without_label[i+1..] }});
+            try out.append(.{ .arrow = .{ .source = words_without_label[0..i], .dest = words_without_label[i + 1 ..] } });
             return try out.toOwnedSlice();
         } else if (std.mem.eql(u8, word, "+=")) {
-            try out.append(.{.add_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] }});
+            try out.append(.{ .add_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i + 1 ..] } });
             return try out.toOwnedSlice();
         } else if (std.mem.eql(u8, word, "-=")) {
-            try out.append(.{.sub_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i+1..] }});
+            try out.append(.{ .sub_assign = .{ .dest = words_without_label[0..i], .source = words_without_label[i + 1 ..] } });
             return try out.toOwnedSlice();
         }
     }
@@ -739,7 +639,7 @@ fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
         try out.append(.{ .macro = .{ .name = words_without_label[0][1..], .args = words_without_label[1..] } });
     } else if (instructionFromMnemonic(words_without_label[0])) |_| {
         try out.append(.{ .instruction = .{ .mnemonic = words_without_label[0], .args = words_without_label[1..] } });
-    } else {  // TODO detect e.g. CALL ABC as an instruction (with an invalid mnemonic)
+    } else { // TODO detect e.g. CALL ABC as an instruction (with an invalid mnemonic)
         try out.append(.{ .expr = words_without_label[0] });
     }
     return try out.toOwnedSlice();
@@ -760,11 +660,11 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
     for (line.source) |expr_str| {
         const expr_type = try getExprType(expr_str, label_types, allocator);
         switch (expr_type) {
-            .register, .register_pair, .number, .address => try source_exprs.append(.{.str = expr_str, .type = expr_type}),
+            .register, .register_pair, .number, .address => try source_exprs.append(.{ .str = expr_str, .type = expr_type }),
             else => {
                 std.log.err("invalid type for source in source/dest expression: {!}\n", .{expr_type});
                 return error.invalid_source_type;
-            }
+            },
         }
     }
     for (line.dest) |expr_str| {
@@ -773,11 +673,11 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
         } else {
             const expr_type = try getExprType(expr_str, label_types, allocator);
             switch (expr_type) {
-                .register, .register_pair => try dest_exprs.append(.{.str = expr_str, .type = expr_type}),
+                .register, .register_pair => try dest_exprs.append(.{ .str = expr_str, .type = expr_type }),
                 else => {
                     std.log.err("invalid type for dest in source/dest expression: {!}\n", .{expr_type});
                     return error.invalid_dest_type;
-                }
+                },
             }
         }
     }
@@ -787,7 +687,7 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
     }
 
     if ((source_exprs.items[0].type == .number or source_exprs.items[0].type == .address) and source_exprs.items.len == 1) {
-        return .{.source = .{.num = source_exprs.items[0]}, .dest = dest_exprs.items};
+        return .{ .source = .{ .num = source_exprs.items[0] }, .dest = dest_exprs.items };
     } else {
         for (source_exprs.items) |expr| {
             if (expr.type != .register and expr.type != .register_pair) {
@@ -795,12 +695,12 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
                 return error.invalid_source;
             }
         }
-        return .{.source = .{.regs = source_exprs.items}, .dest = dest_exprs.items};
+        return .{ .source = .{ .regs = source_exprs.items }, .dest = dest_exprs.items };
     }
 }
 
 fn asTypedExpr(expr: []const u8, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedExpr {
-    return .{.str = expr, .type = try getExprType(expr, label_types, allocator)};
+    return .{ .str = expr, .type = try getExprType(expr, label_types, allocator) };
 }
 
 fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedLine {
@@ -811,39 +711,32 @@ fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), al
             for (inst_line.args, spec.arg_types) |arg, expected_type| {
                 const arg_type = try getExprType(arg, label_types, allocator);
                 if (arg_type != expected_type) return error.type_mismatch;
-                try typed_args.append(.{.str = arg, .type = arg_type});
+                try typed_args.append(.{ .str = arg, .type = arg_type });
             }
-            return .{.instruction = .{.mnemonic = inst_line.mnemonic, .args = try typed_args.toOwnedSlice() }};
+            return .{ .instruction = .{ .mnemonic = inst_line.mnemonic, .args = try typed_args.toOwnedSlice() } };
         },
         .expr => |expr_str| {
-            return.{.expr = try asTypedExpr(expr_str, label_types, allocator)};
+            return .{ .expr = try asTypedExpr(expr_str, label_types, allocator) };
         },
         .equate => |equate_line| {
-            return .{
-                .equate = .{
-                    .name = equate_line.name,
-                    .expr = .{
-                        .str = equate_line.expr, .type = try getExprType(equate_line.expr, label_types, allocator)
-                    }
-                }
-            };
+            return .{ .equate = .{ .name = equate_line.name, .expr = .{ .str = equate_line.expr, .type = try getExprType(equate_line.expr, label_types, allocator) } } };
         },
         .origin => |new_pc_expr| {
-            return .{.origin = try asTypedExpr(new_pc_expr, label_types, allocator)};
+            return .{ .origin = try asTypedExpr(new_pc_expr, label_types, allocator) };
         },
         .macro => std.debug.panic("macro was not replaced before evalExprsInLine call\n", .{}),
         .arrow => |sd_line| {
-            return .{.arrow = try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{ .arrow = try getTypedSourceDest(sd_line, label_types, allocator) };
         },
         .add_assign => |sd_line| {
-            return .{.add_assign = try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{ .add_assign = try getTypedSourceDest(sd_line, label_types, allocator) };
         },
         .sub_assign => |sd_line| {
-            return .{.sub_assign = try getTypedSourceDest(sd_line, label_types, allocator)};
+            return .{ .sub_assign = try getTypedSourceDest(sd_line, label_types, allocator) };
         },
         .label => |label| {
-            return .{.label = label};
-        }
+            return .{ .label = label };
+        },
     }
 }
 
@@ -878,7 +771,7 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
                     try evald_dest.append(@intCast(pair_num * 2));
                     try evald_dest.append(@intCast(pair_num * 2 + 1));
                 },
-                else => std.debug.panic("line passed to getEvaldSourceDestLine has invalid type(s); this should never happen", .{})
+                else => std.debug.panic("line passed to getEvaldSourceDestLine has invalid type(s); this should never happen", .{}),
             }
         } else {
             try evald_dest.append(null);
@@ -892,7 +785,7 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
             if (evald_source >= (@as(u64, 1) << n_bits)) {
                 return error.source_value_too_large;
             }
-            return .{.source = .{.num = evald_source}, .dest = try evald_dest.toOwnedSlice()};
+            return .{ .source = .{ .num = evald_source }, .dest = try evald_dest.toOwnedSlice() };
         },
         .regs => |source_regs| {
             var evald_source = std.ArrayList(u4).init(allocator);
@@ -907,7 +800,7 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
                         try evald_source.append(@intCast(pair_num * 2));
                         try evald_source.append(@intCast(pair_num * 2 + 1));
                     },
-                    else => std.debug.panic("line passed to getEvaldSourceDestLine has invalid type(s); this should never happen", .{})
+                    else => std.debug.panic("line passed to getEvaldSourceDestLine has invalid type(s); this should never happen", .{}),
                 }
             }
             if (evald_source.items.len != evald_dest.items.len) {
@@ -918,37 +811,37 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
                 std.log.err("source or dest has 0 length\n", .{});
                 return error.empty_source_or_dest;
             }
-            return .{ .source = .{.regs = try evald_source.toOwnedSlice()}, .dest = try evald_dest.toOwnedSlice()};
-        }
+            return .{ .source = .{ .regs = try evald_source.toOwnedSlice() }, .dest = try evald_dest.toOwnedSlice() };
+        },
     }
 }
 
 fn getExprsEvaldLine(line: TypedLine, pc: u12, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) !?ExprsEvaldLine {
     switch (line) {
         .add_assign => |sd_line| {
-            return .{.add_assign = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator)};
+            return .{ .add_assign = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator) };
         },
         .sub_assign => |sd_line| {
-            return .{.sub_assign = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator)};
+            return .{ .sub_assign = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator) };
         },
         .arrow => |sd_line| {
-            return .{.arrow = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator)};
+            return .{ .arrow = try getEvaldSourceDestLine(sd_line, pc, label_values, allocator) };
         },
         .equate => return null,
         .expr => |expr| {
-            return .{.expr = try evalExpr(expr.str, pc, label_values, allocator)};
+            return .{ .expr = try evalExpr(expr.str, pc, label_values, allocator) };
         },
         .instruction => |inst_line| {
             var evald_args = std.ArrayList(Expression).init(allocator);
             for (inst_line.args) |arg| {
                 try evald_args.append(try evalExpr(arg.str, pc, label_values, allocator));
             }
-            return .{.instruction = .{.mnemonic = inst_line.mnemonic, .args = try evald_args.toOwnedSlice()}};
+            return .{ .instruction = .{ .mnemonic = inst_line.mnemonic, .args = try evald_args.toOwnedSlice() } };
         },
         .origin => |new_pc_expr| {
-            return .{.origin = @intCast((try evalExpr(new_pc_expr.str, pc, null, allocator)).val)};
+            return .{ .origin = @intCast((try evalExpr(new_pc_expr.str, pc, null, allocator)).val) };
         },
-        .label => return null
+        .label => return null,
     }
 }
 
@@ -969,7 +862,7 @@ fn add_byte_at_pc(bytes: *std.ArrayList(u8), byte: u8, pc: u12) !void {
     if (pc < bytes.items.len) {
         bytes.items[pc] = byte;
     } else {
-        for (0..pc-bytes.items.len) |_| {
+        for (0..pc - bytes.items.len) |_| {
             try bytes.append(0);
         }
         try bytes.append(byte);
@@ -990,7 +883,7 @@ pub fn main() !void {
         const input_chars = try input_file.readToEndAlloc(allocator, 4096 * 2 * 100);
         break :blk input_chars;
     };
-    const lines= blk: {
+    const lines = blk: {
         const parsed_lines = try parseLines(input_chars, allocator);
         const parsed_lines_macros_replaced = try replaceMacros(parsed_lines, allocator);
         const label_types = try getLabelTypes(parsed_lines_macros_replaced, allocator);

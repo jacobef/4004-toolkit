@@ -66,12 +66,12 @@ pub const InstructionSpec = struct {
     pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8, buf: *[2]u16) []const u16 {
         const opcode: u16 =
             if (byte2) |b2|
-                (@as(u16, byte1) << 8) | @as(u16, b2)
-            else
-                @as(u16, byte1) << 8;
+            (@as(u16, byte1) << 8) | @as(u16, b2)
+        else
+            @as(u16, byte1) << 8;
 
         const extrs = self.arg_extractors;
-        switch (self.nArgs()) {
+        switch (extrs.len) {
             0 => return buf[0..0],
             1 => {
                 buf[0] = (opcode & extrs[0].mask) >> extrs[0].shift_amount;
@@ -84,10 +84,6 @@ pub const InstructionSpec = struct {
             },
             else => std.debug.panic("Only up to 2 arguments are supported", .{}),
         }
-    }
-
-    pub fn nArgs(self: InstructionSpec) usize {
-        return self.arg_extractors.len;
     }
 };
 
@@ -464,7 +460,7 @@ fn getArgTypes(comptime opcode: []const u8) []const CPUArgType {
                 'n' => addItem(CPUArgType, out, .number),
                 'p' => addItem(CPUArgType, out, .register_pair),
                 'r' => addItem(CPUArgType, out, .register),
-                else => out
+                else => out,
             };
         }
         return out;
