@@ -66,9 +66,9 @@ pub const InstructionSpec = struct {
     pub fn extractArgs(self: InstructionSpec, byte1: u8, byte2: ?u8, buf: *[2]u16) []const u16 {
         const opcode: u16 =
             if (byte2) |b2|
-            (@as(u16, byte1) << 8) | @as(u16, b2)
-        else
-            @as(u16, byte1) << 8;
+                (@as(u16, byte1) << 8) | @as(u16, b2)
+            else
+                @as(u16, byte1) << 8;
 
         const extrs = self.arg_extractors;
         switch (extrs.len) {
@@ -423,7 +423,7 @@ fn splitOpcode(comptime opcode: []const u8) ![]const []const u8 {
         var i: u8 = 0;
         while (i < opcode.len) {
             const seq_first = i;
-            if (opcode[i] >= 'a' and opcode[i] != 'z') {
+            if (opcode[i] >= 'a' and opcode[i] <= 'z') {
                 while (i < opcode.len and opcode[i] == opcode[seq_first]) {
                     i += 1;
                 }

@@ -12,10 +12,6 @@
 / Set the stack counter to 0
 FIM 7P 0
 
-5 -> 0R
-3 -> 1R
-#CALL MUL_4X4
-
 / Initialize malloc
 #CALL INIT_END_PTR
 

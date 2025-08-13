@@ -308,7 +308,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     return error.label_redefinition;
                 } else {
                     try label_values.put(label, .{ .val = addr, .type = .address });
-                    std.debug.print("{s} = {}\n", .{ label, addr });
+                    // std.debug.print("{s} = {}\n", .{ label, addr });
                 }
             },
             else => doNothing(),
@@ -744,14 +744,6 @@ fn getTypedLines(lines: []ParsedLine, label_types: std.StringHashMap(CPUArgType)
     var out = std.ArrayList(TypedLine).init(allocator);
     for (lines) |line| {
         try out.append(try getTypedLine(line, label_types, allocator));
-    }
-    return try out.toOwnedSlice();
-}
-
-fn evalExprs(exprs: []TypedExpr, allocator: std.mem.Allocator) ![]Expression {
-    var out = std.ArrayList(Expression).init(allocator);
-    for (exprs) |expr| {
-        try out.append(try evalExpr(expr.str));
     }
     return try out.toOwnedSlice();
 }
