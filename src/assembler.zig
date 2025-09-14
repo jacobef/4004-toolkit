@@ -5,8 +5,6 @@ const InstructionSpec = instruction_spec.InstructionSpec;
 const OneOrTwoBytes = instruction_spec.OneOrTwoBytes;
 const CPUArgType = instruction_spec.CPUArgType;
 
-fn doNothing() void {}
-
 fn instructionFromMnemonic(mnemonic: []const u8) ?InstructionSpec {
     for (instruction_spec.instructions.all) |inst| {
         if (std.mem.eql(u8, inst.mnemonic, mnemonic)) {
@@ -282,7 +280,7 @@ fn getLabelTypes(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringH
     for (lines) |line| {
         switch (line) {
             .label => |label| try labels_to_types.put(label, .address),
-            else => doNothing(),
+            else => {},
         }
     }
 
@@ -291,7 +289,7 @@ fn getLabelTypes(lines: []ParsedLine, allocator: std.mem.Allocator) !std.StringH
             .equate => |eq_line| {
                 try labels_to_types.put(eq_line.name, try getExprType(eq_line.expr, labels_to_types, allocator));
             },
-            else => doNothing(),
+            else => {},
         }
     }
 
@@ -311,7 +309,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     // std.debug.print("{s} = {}\n", .{ label, addr });
                 }
             },
-            else => doNothing(),
+            else => {},
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
@@ -325,7 +323,7 @@ fn getLabels(lines: []TypedLine, allocator: std.mem.Allocator) !std.StringHashMa
                     try label_values.put(eq_line.name, try evalExpr(eq_line.expr.str, addr, label_values, allocator));
                 }
             },
-            else => doNothing(),
+            else => {},
         }
         addr = try pcAfterLine(line, addr, allocator);
     }
