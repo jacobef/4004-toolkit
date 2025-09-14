@@ -1,5 +1,4 @@
 const std = @import("std");
-const ArrayList = std.ArrayList;
 
 const cpus = @import("cpu.zig");
 const Intel4004 = cpus.Intel4004;
@@ -134,31 +133,37 @@ fn start_cpu_with_debugger(intel4004: *Intel4004, allocator: std.mem.Allocator) 
     }
 }
 
-fn queue_to_kb(queue: *std.DoublyLinkedList(u8), kb: *Keyboard, lock: *std.atomic.Value(bool), allocator: std.mem.Allocator) void {
+const KeyEntry = struct {
+    node: std.DoublyLinkedList.Node,
+    data: u8,
+};
+
+fn queue_to_kb(queue: *std.DoublyLinkedList, kb: *Keyboard, lock: *std.atomic.Value(bool), allocator: std.mem.Allocator) void {
     while (true) {
-        if (queue.len != 0) {
+        if (queue.first) |_| {
             while (lock.cmpxchgWeak(false, true, .acquire, .monotonic) == false) {
                 std.atomic.spinLoopHint();
             }
-            while (queue.popFirst()) |char| {
-                kb.send_char(char.data);
-                allocator.destroy(char);
+            while (queue.popFirst()) |n| {
+                const entry: *KeyEntry = @fieldParentPtr("node", n);
+                kb.send_char(entry.data);
+                allocator.destroy(entry);
             }
             lock.store(false, .release);
         }
     }
 }
 
-fn input_to_queue(queue: *std.DoublyLinkedList(u8), lock: *std.atomic.Value(bool), allocator: std.mem.Allocator) !void {
+fn input_to_queue(queue: *std.DoublyLinkedList, lock: *std.atomic.Value(bool), allocator: std.mem.Allocator) !void {
     while (true) {
         while (lock.cmpxchgWeak(false, true, .acquire, .monotonic) == false) {
             std.atomic.spinLoopHint();
         }
 
-        const char = getch();
-        const node = try allocator.create(std.DoublyLinkedList(u8).Node);
-        node.* = .{ .data = char };
-        queue.append(node);
+        const ch = getch();
+        const entry = try allocator.create(KeyEntry);
+        entry.* = .{ .node = .{}, .data = ch };
+        queue.append(&entry.node);
 
         lock.store(false, .release);
     }
@@ -179,7 +184,7 @@ pub fn main() !void {
     const executable_file = try std.fs.cwd().openFile(executable_path, .{ .mode = .read_only });
     _ = try executable_file.readAll(&intel4004.pram.bytes);
 
-    var queue = std.DoublyLinkedList(u8){};
+    var queue = std.DoublyLinkedList{};
 
     var keyboard = Keyboard{
         .char_port_high = &intel4004.rom.ports[0],

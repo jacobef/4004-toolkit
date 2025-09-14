@@ -7,8 +7,6 @@
     / The return value should be spread across 0R and 1R.
 / Functions must leave 10R-13R untouched, but can mess with 0-9R. 14R-15R is the stack counter.
 
-= 2
-
 / Set the stack counter to 0
 FIM 7P 0
 

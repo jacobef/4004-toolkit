@@ -26,7 +26,8 @@ pub const Monitor = struct {
     char_ready_port: *u4,
 
     pub fn turn_on(self: *Monitor) !void {
-        const stdout = std.io.getStdOut().writer();
+        var stdout_writer = std.fs.File.stdout().writer(&.{});
+        const stdout = &stdout_writer.interface;
         while (true) {
             while (self.char_ready_port.* & 1 == 0) {}
 
@@ -34,7 +35,7 @@ pub const Monitor = struct {
             const char_high: u8 = self.char_port_high.*;
             const char = (char_high << 4) | char_low;
             if (char == std.ascii.control_code.del) {
-                try stdout.print("{c} {c}", .{std.ascii.control_code.bs, std.ascii.control_code.bs});
+                try stdout.print("{c} {c}", .{ std.ascii.control_code.bs, std.ascii.control_code.bs });
             }
             try stdout.print("{c}", .{char});
 

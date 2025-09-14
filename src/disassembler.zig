@@ -11,7 +11,7 @@ pub fn disassemble_instruction(intel4004: *Intel4004, addr: u12, allocator: std.
     var args_buf: [2]u16 = undefined;
     const args = inst_spec.extractArgs(byte1, byte2, &args_buf);
 
-    var out = std.ArrayList(u8).init(allocator);
+    var out = std.array_list.Managed(u8).init(allocator);
     try out.appendSlice(inst_spec.mnemonic);
     try out.appendSlice(" ");
     for (args) |arg| {

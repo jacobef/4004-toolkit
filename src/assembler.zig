@@ -74,7 +74,7 @@ fn evalCharExpr(expr: []const u8) !u8 {
 }
 
 fn tokenizeExpr(expr: []const u8, allocator: std.mem.Allocator) ![]ExprToken {
-    var tokens = std.ArrayList(ExprToken).init(allocator);
+    var tokens = std.array_list.Managed(ExprToken).init(allocator);
     var i: usize = 0;
 
     while (i < expr.len) {
@@ -252,7 +252,7 @@ fn getArgMask(arg_t: type, args: []const Expression, spec: InstructionSpec, arg_
 
     const arg_val: u16 = @as(arg_t, @truncate(arg.val));
     if (arg.type != expected_type) {
-        std.log.err("expected {s}, got {s} for arg {!}\n", .{ @tagName(expected_type), @tagName(arg.type), arg_i });
+        std.log.err("expected {s}, got {s} for arg {d}\n", .{ @tagName(expected_type), @tagName(arg.type), arg_i });
         return error.type_mismatch;
     }
     return arg_val << spec.arg_extractors[arg_i].shift_amount;
@@ -346,7 +346,7 @@ fn numRegsInDest(line: TypedSourceDestLine) !u8 {
 
 fn getArrowLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
     // TODO add solver for cases like 0R 1R 2R -> 1R 2R 3R, and detect invalid cases like 0R 1R -> 1R 0R
-    var out = std.ArrayList(ExprsEvaldLine).init(allocator);
+    var out = std.array_list.Managed(ExprsEvaldLine).init(allocator);
     var i: u4 = 0; // LHS number is 64 bits max, so 16 RHS registers max
     while (i < line.dest.len) : (i += 1) {
         if (line.dest[i]) |dest_reg| {
@@ -368,7 +368,7 @@ fn getArrowLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocat
 }
 
 fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
-    var out = std.ArrayList(ExprsEvaldLine).init(allocator);
+    var out = std.array_list.Managed(ExprsEvaldLine).init(allocator);
     try out.append(.{ .instruction = .{ .mnemonic = "CLC", .args = try allocator.dupe(Expression, &.{}) } });
 
     for (0..line.dest.len) |idx| {
@@ -397,7 +397,7 @@ fn getAddAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.All
 }
 
 fn getSubAssignLineReplacement(line: EvaldSourceDestLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
-    var out = std.ArrayList(ExprsEvaldLine).init(allocator);
+    var out = std.array_list.Managed(ExprsEvaldLine).init(allocator);
     // Append 'CLC' instruction at the start
     try out.append(.{ .instruction = .{ .mnemonic = "CLC", .args = try allocator.dupe(Expression, &.{}) } });
 
@@ -490,7 +490,7 @@ fn pcAfterLine(line: TypedLine, pc: u12, allocator: std.mem.Allocator) !u12 {
 }
 
 fn replaceSourceDestLines(lines: []ExprsEvaldLine, allocator: std.mem.Allocator) ![]ExprsEvaldLine {
-    var out = std.ArrayList(ExprsEvaldLine).init(allocator);
+    var out = std.array_list.Managed(ExprsEvaldLine).init(allocator);
 
     for (lines) |line| {
         switch (line) {
@@ -549,7 +549,7 @@ fn getMacroReplacement(name: []const u8, args: []const []const u8, allocator: st
 }
 
 fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLine {
-    var out = std.ArrayList(ParsedLine).init(allocator);
+    var out = std.array_list.Managed(ParsedLine).init(allocator);
     for (lines) |line| {
         switch (line) {
             .macro => |macro_line| {
@@ -563,7 +563,7 @@ fn replaceMacros(lines: []ParsedLine, allocator: std.mem.Allocator) ![]ParsedLin
 }
 
 fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 {
-    var out = std.ArrayList([]const u8).init(allocator);
+    var out = std.array_list.Managed([]const u8).init(allocator);
     var in_quote = false;
     var after_backslash = false;
     var word_start: usize = 0;
@@ -599,7 +599,7 @@ fn getWords(line: []const u8, allocator: std.mem.Allocator) ![]const []const u8 
 }
 
 fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
-    var out = std.ArrayList(ParsedLine).init(allocator);
+    var out = std.array_list.Managed(ParsedLine).init(allocator);
 
     const words = try getWords(line, allocator);
 
@@ -645,7 +645,7 @@ fn parseLine(line: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
 
 fn parseLines(input_chars: []const u8, allocator: std.mem.Allocator) ![]ParsedLine {
     var line_iterator = std.mem.tokenizeAny(u8, input_chars, "\n");
-    var out = std.ArrayList(ParsedLine).init(allocator);
+    var out = std.array_list.Managed(ParsedLine).init(allocator);
     while (line_iterator.next()) |line| {
         try out.appendSlice(try parseLine(line, allocator));
     }
@@ -653,14 +653,14 @@ fn parseLines(input_chars: []const u8, allocator: std.mem.Allocator) ![]ParsedLi
 }
 
 fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedSourceDestLine {
-    var source_exprs = std.ArrayList(TypedExpr).init(allocator);
-    var dest_exprs = std.ArrayList(?TypedExpr).init(allocator);
+    var source_exprs = std.array_list.Managed(TypedExpr).init(allocator);
+    var dest_exprs = std.array_list.Managed(?TypedExpr).init(allocator);
     for (line.source) |expr_str| {
         const expr_type = try getExprType(expr_str, label_types, allocator);
         switch (expr_type) {
             .register, .register_pair, .number, .address => try source_exprs.append(.{ .str = expr_str, .type = expr_type }),
             else => {
-                std.log.err("invalid type for source in source/dest expression: {!}\n", .{expr_type});
+                std.log.err("invalid type for source in source/dest expression: {s}\n", .{@tagName(expr_type)});
                 return error.invalid_source_type;
             },
         }
@@ -673,7 +673,7 @@ fn getTypedSourceDest(line: UnevaldSourceDestLine, label_types: std.StringHashMa
             switch (expr_type) {
                 .register, .register_pair => try dest_exprs.append(.{ .str = expr_str, .type = expr_type }),
                 else => {
-                    std.log.err("invalid type for dest in source/dest expression: {!}\n", .{expr_type});
+                    std.log.err("invalid type for dest in source/dest expression: {s}\n", .{@tagName(expr_type)});
                     return error.invalid_dest_type;
                 },
             }
@@ -704,7 +704,7 @@ fn asTypedExpr(expr: []const u8, label_types: std.StringHashMap(CPUArgType), all
 fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) !TypedLine {
     switch (line) {
         .instruction => |inst_line| {
-            var typed_args = std.ArrayList(TypedExpr).init(allocator);
+            var typed_args = std.array_list.Managed(TypedExpr).init(allocator);
             const spec = instructionFromMnemonic(inst_line.mnemonic) orelse return error.no_such_instruction;
             for (inst_line.args, spec.arg_types) |arg, expected_type| {
                 const arg_type = try getExprType(arg, label_types, allocator);
@@ -739,7 +739,7 @@ fn getTypedLine(line: ParsedLine, label_types: std.StringHashMap(CPUArgType), al
 }
 
 fn getTypedLines(lines: []ParsedLine, label_types: std.StringHashMap(CPUArgType), allocator: std.mem.Allocator) ![]TypedLine {
-    var out = std.ArrayList(TypedLine).init(allocator);
+    var out = std.array_list.Managed(TypedLine).init(allocator);
     for (lines) |line| {
         try out.append(try getTypedLine(line, label_types, allocator));
     }
@@ -747,7 +747,7 @@ fn getTypedLines(lines: []ParsedLine, label_types: std.StringHashMap(CPUArgType)
 }
 
 fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) !EvaldSourceDestLine {
-    var evald_dest = std.ArrayList(?u4).init(allocator);
+    var evald_dest = std.array_list.Managed(?u4).init(allocator);
 
     for (line.dest) |expr| {
         if (expr) |expr_| {
@@ -778,7 +778,7 @@ fn getEvaldSourceDestLine(line: TypedSourceDestLine, pc: u12, label_values: std.
             return .{ .source = .{ .num = evald_source }, .dest = try evald_dest.toOwnedSlice() };
         },
         .regs => |source_regs| {
-            var evald_source = std.ArrayList(u4).init(allocator);
+            var evald_source = std.array_list.Managed(u4).init(allocator);
             for (source_regs) |expr| {
                 switch (expr.type) {
                     .register => {
@@ -822,7 +822,7 @@ fn getExprsEvaldLine(line: TypedLine, pc: u12, label_values: std.StringHashMap(E
             return .{ .expr = try evalExpr(expr.str, pc, label_values, allocator) };
         },
         .instruction => |inst_line| {
-            var evald_args = std.ArrayList(Expression).init(allocator);
+            var evald_args = std.array_list.Managed(Expression).init(allocator);
             for (inst_line.args) |arg| {
                 try evald_args.append(try evalExpr(arg.str, pc, label_values, allocator));
             }
@@ -836,7 +836,7 @@ fn getExprsEvaldLine(line: TypedLine, pc: u12, label_values: std.StringHashMap(E
 }
 
 fn getExprsEvaldLines(lines: []TypedLine, label_values: std.StringHashMap(Expression), allocator: std.mem.Allocator) ![]ExprsEvaldLine {
-    var out = std.ArrayList(ExprsEvaldLine).init(allocator);
+    var out = std.array_list.Managed(ExprsEvaldLine).init(allocator);
     var addr: u12 = 0;
     for (lines) |line| {
         const fully_parsed_line = try getExprsEvaldLine(line, addr, label_values, allocator);
@@ -848,7 +848,7 @@ fn getExprsEvaldLines(lines: []TypedLine, label_values: std.StringHashMap(Expres
     return try out.toOwnedSlice();
 }
 
-fn add_byte_at_pc(bytes: *std.ArrayList(u8), byte: u8, pc: u12) !void {
+fn add_byte_at_pc(bytes: *std.array_list.Managed(u8), byte: u8, pc: u12) !void {
     if (pc < bytes.items.len) {
         bytes.items[pc] = byte;
     } else {

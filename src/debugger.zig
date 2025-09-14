@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub const TCP_ADDRESS = std.net.Address.initIp4(.{127, 0, 0, 1}, 5005);
+pub const TCP_ADDRESS = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 5005);
 pub const MAX_CMD_SIZE = 1024;
 
 fn sendToEmulator(to_emulator: std.net.Stream.Writer, content: []const u8) !void {
@@ -8,10 +8,7 @@ fn sendToEmulator(to_emulator: std.net.Stream.Writer, content: []const u8) !void
     _ = try to_emulator.write("\n");
 }
 
-const StepCPUResult = struct {
-    instruction: []const u8,
-    new_pc: u12
-};
+const StepCPUResult = struct { instruction: []const u8, new_pc: u12 };
 
 fn stepCPU(to_emulator: std.net.Stream.Writer, from_emulator: std.net.Stream.Reader, allocator: std.mem.Allocator) !StepCPUResult {
     try sendToEmulator(to_emulator, "s");
@@ -19,10 +16,10 @@ fn stepCPU(to_emulator: std.net.Stream.Writer, from_emulator: std.net.Stream.Rea
     var buf: [10]u8 = undefined;
     const new_pc_str = try from_emulator.readUntilDelimiter(&buf, '\n');
     const new_pc = try std.fmt.parseInt(u12, new_pc_str, 10);
-    return .{.instruction = instruction, .new_pc = new_pc};
+    return .{ .instruction = instruction, .new_pc = new_pc };
 }
 
-fn runDebuggerCmd(stdout: std.fs.File.Writer, to_emulator: std.net.Stream.Writer, from_emulator: std.net.Stream.Reader, command: []const u8, breakpoints: *std.ArrayList(u12), allocator: std.mem.Allocator) !void {
+fn runDebuggerCmd(stdout: std.fs.File.Writer, to_emulator: std.net.Stream.Writer, from_emulator: std.net.Stream.Reader, command: []const u8, breakpoints: *std.array_list.Managed(u12), allocator: std.mem.Allocator) !void {
     var cmd_it = std.mem.tokenizeScalar(u8, command, ' ');
     const cmd_name = cmd_it.next().?;
     if (std.mem.eql(u8, cmd_name, "s")) {
@@ -60,7 +57,8 @@ fn runDebuggerCmd(stdout: std.fs.File.Writer, to_emulator: std.net.Stream.Writer
 
 pub fn main() !void {
     const stdin = std.io.getStdIn().reader();
-    const stdout = std.io.getStdOut().writer();
+    var stdout_writer = std.fs.File.stdout().writer(&.{});
+    const stdout = &stdout_writer.interface;
     const allocator = std.heap.page_allocator;
 
     const stream = try std.net.tcpConnectToAddress(TCP_ADDRESS);
@@ -68,7 +66,7 @@ pub fn main() !void {
     const from_emulator = stream.reader();
     const to_emulator = stream.writer();
     var last_command: ?[]u8 = null;
-    var breakpoints = std.ArrayList(u12).init(allocator);
+    var breakpoints = std.array_list.Managed(u12).init(allocator);
     while (true) {
         try stdout.print("> ", .{});
         var buf: [MAX_CMD_SIZE]u8 = undefined;
